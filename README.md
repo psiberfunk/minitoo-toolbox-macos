@@ -20,7 +20,7 @@ The current defaults are for one tested device:
 
 ```text
 Bluetooth name: Divoom MiniToo-Audio
-Bluetooth MAC:  B1:21:81:6F:4D:F0
+Bluetooth MAC:  B1:21:81:B1:F0:84
 RFCOMM channel: 1
 Daemon port:    40583
 ```
@@ -96,8 +96,8 @@ Useful actions:
 Start the daemon manually:
 
 ```bash
-blueutil --disconnect B1:21:81:6F:4D:F0 || true
-tools/divoom-daemon B1:21:81:6F:4D:F0 1 40583
+blueutil --disconnect B1:21:81:B1:F0:84 || true
+tools/divoom-daemon B1:21:81:B1:F0:84 1 40583
 ```
 
 Send media through the daemon:
@@ -232,7 +232,7 @@ omo-slim/                    Local test/media assets; not core project API
 If daemon start fails with an RFCOMM error, disconnect the audio profile once:
 
 ```bash
-blueutil --disconnect B1:21:81:6F:4D:F0
+blueutil --disconnect B1:21:81:B1:F0:84
 ```
 
 Then restart the daemon or reopen the app.
