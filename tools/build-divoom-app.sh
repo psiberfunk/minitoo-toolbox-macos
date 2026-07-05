@@ -81,8 +81,17 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-if command -v codesign >/dev/null 2>&1; then
-  echo "Ad-hoc signing app..."
+# Prefer any available non-ad-hoc codesigning identity (e.g. a free "Apple
+# Development" personal-team cert from Xcode, or a paid Developer ID). A
+# stable (non-ad-hoc) identity keeps the same Team ID across rebuilds, so
+# macOS TCC recognizes the app as the same requester and doesn't re-prompt
+# for Bluetooth access every time the binary is recompiled and re-signed.
+SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -m1 -oE '"[^"]+"' | tr -d '"')"
+if [[ -n "$SIGNING_IDENTITY" ]]; then
+  echo "Signing app with $SIGNING_IDENTITY..."
+  codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP" >/dev/null
+elif command -v codesign >/dev/null 2>&1; then
+  echo "warning: no codesigning identity found in keychain; falling back to ad-hoc signing (Bluetooth permission will re-prompt on every rebuild)" >&2
   codesign --force --deep --sign - "$APP" >/dev/null
 fi
 
