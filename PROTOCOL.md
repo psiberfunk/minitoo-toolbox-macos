@@ -5,7 +5,7 @@ Notes from reversing the Divoom Android app + Android Bluetooth snoop captures, 
 ## Device / transport
 
 - Device: `Divoom MiniToo-Audio`
-- Bluetooth address used from macOS: `B1:21:81:B1:F0:84`
+- Bluetooth address used from macOS: `B1:21:81:6F:4D:F0`
 - Transport: Bluetooth Classic SPP over RFCOMM
 - Working app protocol channel from macOS: RFCOMM channel `1`, opened directly via `IOBluetooth`.
 - The macOS serial device `/dev/cu.DivoomMiniToo-Audio` exists, but was unreliable for this protocol. Direct RFCOMM worked.
@@ -32,8 +32,8 @@ If the Divoom is connected as an audio device in macOS, opening the app RFCOMM p
 Validated reliable flow:
 
 ```bash
-blueutil --disconnect B1:21:81:B1:F0:84 || true
-tools/divoom-rfcomm-send B1:21:81:B1:F0:84 1 <packets-lenpref.bin> 0.012
+blueutil --disconnect B1:21:81:6F:4D:F0 || true
+tools/divoom-rfcomm-send B1:21:81:6F:4D:F0 1 <packets-lenpref.bin> 0.012
 ```
 
 This avoids the noisy/visible audio profile and opens the RFCOMM app channel directly. The disconnect causes an audible reconnect/noise if audio was active, so the next goal is a daemon that opens RFCOMM once and keeps it open for multiple sends.
@@ -342,8 +342,8 @@ Working direct send example:
 
 ```bash
 .venv/bin/python tools/send_divoom_image.py fixer.png --dry-run
-blueutil --disconnect B1:21:81:B1:F0:84 || true
-tools/divoom-rfcomm-send B1:21:81:B1:F0:84 1 captures/mac-send/fixer-packets-lenpref.bin 0.012
+blueutil --disconnect B1:21:81:6F:4D:F0 || true
+tools/divoom-rfcomm-send B1:21:81:6F:4D:F0 1 captures/mac-send/fixer-packets-lenpref.bin 0.012
 ```
 
 Known-good result:
@@ -387,8 +387,8 @@ Current usage:
 ```bash
 # One-time start. If this fails with ret=0x-1ffffd44, disconnect the audio
 # profile once, then start the daemon again.
-blueutil --disconnect B1:21:81:B1:F0:84 || true
-tools/divoom-daemon B1:21:81:B1:F0:84 1 40583
+blueutil --disconnect B1:21:81:6F:4D:F0 || true
+tools/divoom-daemon B1:21:81:6F:4D:F0 1 40583
 ```
 
 In another shell:
@@ -492,7 +492,7 @@ Menu actions:
   - Starts `tools/divoom-daemon` without disconnecting audio first.
   - Disabled while daemon is already running.
 - `Disconnect Audio + Start Daemon`
-  - Runs `blueutil --disconnect B1:21:81:B1:F0:84`, then starts daemon.
+  - Runs `blueutil --disconnect B1:21:81:6F:4D:F0`, then starts daemon.
   - Use this if normal start fails because macOS audio owns the RFCOMM channel.
   - Disabled while daemon is already running.
 - `Stop Daemon`

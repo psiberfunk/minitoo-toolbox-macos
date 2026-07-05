@@ -11,7 +11,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var statusItemViewTimer: Timer?
     var lastMessage = "Ready"
 
-    let address = "B1:21:81:B1:F0:84"
+    let address = "B1:21:81:6F:4D:F0"
     let channel = "1"
     let daemonPort = "40583"
     var menuLog: URL { supportDir.appendingPathComponent("divoom-menubar.log") }
@@ -146,8 +146,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
            kill(pid, 0) == 0 {
             return true
         }
-        let daemonPath = toolRoot.appendingPathComponent("divoom-daemon").path.replacingOccurrences(of: "'", with: "'\\''")
-        let (code, _) = run("/bin/sh", ["-lc", "pgrep -f '\(daemonPath)' >/dev/null || pgrep -f 'divoom-daemon' >/dev/null"], wait: true)
+        let (code, _) = run("/usr/bin/pgrep", ["-x", "divoom-daemon"], wait: true)
         return code == 0
     }
 
@@ -324,7 +323,9 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func appendLog(_ line: String) {
         let ts = ISO8601DateFormatter().string(from: Date())
         let text = "[\(ts)] \(line)\n"
-        FileManager.default.createFile(atPath: menuLog.path, contents: nil)
+        if !FileManager.default.fileExists(atPath: menuLog.path) {
+            FileManager.default.createFile(atPath: menuLog.path, contents: nil)
+        }
         if let h = try? FileHandle(forWritingTo: menuLog) {
             h.seekToEndOfFile()
             h.write(Data(text.utf8))
