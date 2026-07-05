@@ -11,8 +11,6 @@ import send_divoom_image
 # Raw SppProc$CMD_TYPE opcodes (see PROTOCOL.md), reverse-engineered from the
 # official Divoom Android app (com.divoom.Divoom.bluetooth.CmdManager).
 CMD_SET_SYSTEM_BRIGHT = 0x74  # SPP_SET_SYSTEM_BRIGHT(116)
-CMD_DIVOOM_EXTERN_CMD = 0xBD  # SPP_DIVOOM_EXTERN_CMD(189)
-EXT_SET_SCREEN_DIR_CFG = 0x23  # SppProc$EXT_CMD_TYPE.SPP_SECOND_SET_SCREEN_DIR_CFG(35)
 
 
 def submit(host: str, port: int, packets_path: Path, delay: float = 0.012, dry_run: bool = False) -> dict:
@@ -34,12 +32,6 @@ def build_brightness_packet(level: int) -> bytes:
     return send_divoom_image.frame(CMD_SET_SYSTEM_BRIGHT, bytes([level]))
 
 
-def build_rotation_packet(mode: int) -> bytes:
-    # Rotation mode byte meaning is not yet confirmed against real hardware;
-    # 0 and 1 are the first candidates to try for normal/180 degrees.
-    return send_divoom_image.frame(CMD_DIVOOM_EXTERN_CMD, bytes([EXT_SET_SCREEN_DIR_CFG, mode & 0xFF]))
-
-
 def write_packet(out_dir: Path, name: str, packet: bytes) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{name}-packets-lenpref.bin"
@@ -48,7 +40,7 @@ def write_packet(out_dir: Path, name: str, packet: bytes) -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Send Divoom MiniToo display settings (brightness/rotation) over the RFCOMM daemon")
+    parser = argparse.ArgumentParser(description="Send Divoom MiniToo display settings over the RFCOMM daemon")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=40583)
     parser.add_argument("--out-dir", type=Path, default=Path("captures/mac-send"))
@@ -60,17 +52,10 @@ def main() -> int:
     p_bright = sub.add_parser("brightness", help="set screen brightness 0-100")
     p_bright.add_argument("level", type=int, help="brightness level 0-100")
 
-    p_rotate = sub.add_parser("rotate", help="set screen rotation mode (raw byte; 0/1 are first candidates)")
-    p_rotate.add_argument("mode", type=int, help="raw rotation mode byte")
-
     args = parser.parse_args()
 
-    if args.action == "brightness":
-        packet = build_brightness_packet(args.level)
-        name = f"brightness-{args.level}"
-    else:
-        packet = build_rotation_packet(args.mode)
-        name = f"rotate-{args.mode}"
+    packet = build_brightness_packet(args.level)
+    name = f"brightness-{args.level}"
 
     out_path = write_packet(args.out_dir, name, packet)
     print(f"packet={out_path} len={len(packet)}")

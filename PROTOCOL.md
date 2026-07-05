@@ -563,3 +563,26 @@ CLI:
 ```bash
 .venv/bin/python tools/divoom_display.py brightness 100
 ```
+
+## Explored, not applicable to MiniToo: "screen dir cfg" / rotation
+
+`SppProc$EXT_CMD_TYPE.SPP_SECOND_SET_SCREEN_DIR_CFG` (`35`, sent via the
+extended-command wrapper `SPP_DIVOOM_EXTERN_CMD` / `0xBD`) looked, from the
+enum name alone, like a candidate for physically rotating the display 180°.
+
+Tested on hardware with mode bytes `0, 1, 2, 3`: no visible effect.
+
+Tracing the Android app's actual UI consumer (`LightSettingsFragment.java`,
+under "More > Light Settings") shows this control is a `RadioGroup` bound to
+values `30/60/180/360/720/0` next to a mirror toggle, intensity seek bar, and
+shake/auto-connect switches — an ambient RGB light auto-cycle timer for a
+*different* Divoom product line (e.g. a light cube/panel), not the MiniToo
+pixel screen. Divoom's `SppProc$CMD_TYPE`/`EXT_CMD_TYPE` opcode space is
+shared across their whole catalog, so this opcode number is simply reused
+for an unrelated feature on other hardware; MiniToo's firmware appears to
+silently ignore it.
+
+No genuine screen-orientation/flip command was found elsewhere in the
+decompiled app for this device. Given MiniToo's fixed desk-facing form
+factor (unlike e.g. Tivoo's swiveling stand), it likely doesn't have a
+rotation feature at all. Not implemented in the Mac tooling.
