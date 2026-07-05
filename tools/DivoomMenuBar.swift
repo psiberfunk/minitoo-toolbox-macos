@@ -170,12 +170,20 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Disconnect Divoom Audio", #selector(disconnectAudioMenu), enabled: audioConnected))
         menu.addItem(item("Reconnect Divoom Audio", #selector(reconnectAudioMenu), enabled: !audioConnected))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(item("Open Captures Folder", #selector(openCaptures)))
-        menu.addItem(item("Open Protocol Notes", #selector(openProtocol)))
-        menu.addItem(item("Open Menu Log", #selector(openMenuLog)))
-        menu.addItem(item("Open Daemon Log", #selector(openDaemonLog)))
+        menu.addItem(debuggingToolsSubmenu())
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Quit", #selector(quit)))
+    }
+
+    func debuggingToolsSubmenu() -> NSMenuItem {
+        let parent = NSMenuItem(title: "Debugging Tools", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.addItem(item("Open Captures Folder", #selector(openCaptures)))
+        submenu.addItem(item("Open Protocol Notes", #selector(openProtocol)))
+        submenu.addItem(item("Open Menu Log", #selector(openMenuLog)))
+        submenu.addItem(item("Open Daemon Log", #selector(openDaemonLog)))
+        parent.submenu = submenu
+        return parent
     }
 
     func item(_ title: String, _ action: Selector, enabled: Bool = true) -> NSMenuItem {
