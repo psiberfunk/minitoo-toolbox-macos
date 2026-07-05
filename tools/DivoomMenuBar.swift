@@ -1,5 +1,78 @@
 import AppKit
 import Foundation
+import Network
+
+/// Native builder/sender for small single-frame raw opcodes (e.g. brightness),
+/// talking directly to the already-running daemon's TCP job socket. Avoids the
+/// process-spawn + venv-activation latency of shelling out to a Python helper
+/// for commands where a snappy UI (like a live-dragged slider) matters.
+enum DivoomRawFrame {
+    /// Same envelope as PROTOCOL.md / send_divoom_image.py's frame():
+    /// 0x01 <declared_len LE16> <cmd> <body...> <checksum LE16> 0x02
+    static func build(cmd: UInt8, body: Data) -> Data {
+        var frame = Data()
+        frame.append(0x01)
+        let declared = UInt16(3 + body.count)
+        frame.append(UInt8(declared & 0xFF))
+        frame.append(UInt8((declared >> 8) & 0xFF))
+        frame.append(cmd)
+        frame.append(body)
+        var sum: UInt32 = 0
+        for b in frame[1...] { sum &+= UInt32(b) }
+        let chk = UInt16(sum & 0xFFFF)
+        frame.append(UInt8(chk & 0xFF))
+        frame.append(UInt8((chk >> 8) & 0xFF))
+        frame.append(0x02)
+        return frame
+    }
+
+    static func writePacketsFile(_ packet: Data, name: String, in dir: URL) -> URL {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let path = dir.appendingPathComponent("\(name)-packets-lenpref.bin")
+        var out = Data()
+        out.append(UInt8(packet.count & 0xFF))
+        out.append(UInt8((packet.count >> 8) & 0xFF))
+        out.append(packet)
+        try? out.write(to: path)
+        return path
+    }
+
+    static func submit(packetsPath: URL, port: UInt16, completion: @escaping (String) -> Void) {
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+            completion("bad port")
+            return
+        }
+        let conn = NWConnection(host: "127.0.0.1", port: nwPort, using: .tcp)
+        conn.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                let job: [String: Any] = ["packets": packetsPath.path, "delay": 0.012, "dryRun": false]
+                guard let data = try? JSONSerialization.data(withJSONObject: job) else {
+                    completion("job encode error")
+                    conn.cancel()
+                    return
+                }
+                conn.send(content: data + Data([0x0a]), completion: .contentProcessed { _ in
+                    conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { recvData, _, _, error in
+                        if let recvData, let str = String(data: recvData, encoding: .utf8) {
+                            completion(str.trimmingCharacters(in: .whitespacesAndNewlines))
+                        } else if let error {
+                            completion("receive error: \(error)")
+                        } else {
+                            completion("")
+                        }
+                        conn.cancel()
+                    }
+                })
+            case .failed(let err):
+                completion("connection failed: \(err)")
+            default:
+                break
+            }
+        }
+        conn.start(queue: .global(qos: .userInitiated))
+    }
+}
 
 final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -10,6 +83,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var daemonProcess: Process?
     var statusItemViewTimer: Timer?
     var lastMessage = "Ready"
+    var lastBrightness: Int = 100
 
     let address = "B1:21:81:6F:4D:F0"
     let channel = "1"
@@ -73,6 +147,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Send Image/GIF/Video…", #selector(sendImage), enabled: daemonRunning))
         menu.addItem(item("Activate Custom Face 1", #selector(activateCustomFace1), enabled: daemonRunning))
         menu.addItem(item("Activate Custom Face 2", #selector(activateCustomFace2), enabled: daemonRunning))
+        menu.addItem(brightnessSliderItem(enabled: daemonRunning))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Start Daemon (only if audio disconnected)", #selector(startDaemonMenu), enabled: !daemonRunning && !audioConnected))
         menu.addItem(item("Disconnect Audio + Start Daemon", #selector(disconnectAndStartMenu), enabled: !daemonRunning))
@@ -292,6 +367,49 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func activateCustomFace1() { activateClock("custom1") }
     @objc func activateCustomFace2() { activateClock("custom2") }
+
+    func brightnessSliderItem(enabled: Bool) -> NSMenuItem {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 34))
+
+        let label = NSTextField(labelWithString: "Brightness")
+        label.frame = NSRect(x: 14, y: 8, width: 74, height: 18)
+        label.font = NSFont.menuFont(ofSize: 0)
+        label.isEnabled = enabled
+        container.addSubview(label)
+
+        let slider = NSSlider(value: Double(lastBrightness), minValue: 0, maxValue: 100, target: self, action: #selector(brightnessSliderChanged(_:)))
+        slider.frame = NSRect(x: 92, y: 6, width: 116, height: 20)
+        slider.isContinuous = false
+        slider.isEnabled = enabled
+        container.addSubview(slider)
+
+        let menuItem = NSMenuItem()
+        menuItem.view = container
+        return menuItem
+    }
+
+    @objc func brightnessSliderChanged(_ sender: NSSlider) {
+        setBrightness(Int(sender.intValue))
+    }
+
+    func setBrightness(_ level: Int) {
+        lastBrightness = level
+        let level = max(0, min(100, level))
+        // Native fast-path: build the SPP_SET_SYSTEM_BRIGHT (0x74) frame directly
+        // and talk to the daemon's TCP socket, skipping the Python/venv spin-up
+        // cost that makes slider dragging feel sluggish through divoom_display.py.
+        let packet = DivoomRawFrame.build(cmd: 0x74, body: Data([UInt8(level)]))
+        let path = DivoomRawFrame.writePacketsFile(packet, name: "brightness-\(level)", in: capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                // "sent but final ACK not observed" is expected/benign for
+                // single-frame raw commands (only chunked GIF transfers get a
+                // real ACK); only surface genuine transport-level failures.
+                let hardFailure = result.contains("failed") || result.contains("error") || result.isEmpty
+                self?.setStatus(hardFailure ? "Brightness issue: \(result)" : "Brightness set to \(level)%")
+            }
+        }
+    }
 
     @objc func openCaptures() {
         NSWorkspace.shared.open(capturesDir)

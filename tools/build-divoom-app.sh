@@ -21,6 +21,7 @@ swiftc "$TOOLS/DivoomDaemon.swift" \
 echo "Building menu-bar app executable..."
 swiftc "$TOOLS/DivoomMenuBar.swift" \
   -framework AppKit \
+  -framework Network \
   -o "$TOOLS/divoom-menubar"
 
 echo "Packaging $APP..."
