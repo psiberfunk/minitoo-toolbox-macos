@@ -651,13 +651,20 @@ decompile-derived findings (2026-07-05). Sources:
   for it to fire) rather than treating it as settled either way.
 - `0xa0` = Set game, `0x72` = Set tool view — matches our own findings.
 
-### New capabilities found (not yet implemented here)
+### New capabilities found
 
 - **Screen on/off** — JSON `{"Command":"Channel/OnOffScreen","OnOff":0|1}`,
   or raw `SPP_DIVOOM_EXTERN_CMD` (`0xBD`) + ext `SPP_SECOND_OPEN_SCREEN_CTRL`
   (`0x2F`) with arg `0`=off, `1`=on/restore, `2`=no-op, `3`=off. Confirmed
-  working on real MiniToo hardware by bugzmanov. Simple, safe, good
-  candidate for the Mac menu bar.
+  working on real MiniToo hardware by bugzmanov, and independently
+  hardware-tested here. **Implemented** — `tools/divoom_display.py screen
+  on|off` plus a `Screen On`/`Screen Off` menu-bar item (native fast-path).
+- **Third custom face** — see "Custom face selection" above. **Implemented**
+  — `ClockId 988` wired into `tools/divoom_clock.py`'s shortcut dict and the
+  menu bar.
+
+### Not yet implemented here
+
 - **ANCS-style text notification** — opcode `0x50`
   (`SPP_SET_ANDROID_ANCS`), body = `[icon_slot_u8, text_len_u8,
   utf8_text...]`. Flashes an icon (24 preset app icons: Instagram,
@@ -670,7 +677,6 @@ decompile-derived findings (2026-07-05). Sources:
   countdown trigger an audible alarm** when they cross a boundary/hit
   zero — avoid at night. There is no software "return to clock face"
   command for any tool view; only the physical button exits it.
-- **Third custom face** — see "Custom face selection" above.
 
 ### Not incorporated
 
