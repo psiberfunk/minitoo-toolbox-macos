@@ -124,7 +124,16 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.refreshTitle()
         }
         refreshTitle()
-        startDaemon(disconnectFirst: true)
+        // Don't blindly disconnect+restart on every launch: if a daemon from a
+        // prior app instance is already running and holding a live RFCOMM
+        // channel, tearing down the Bluetooth connection out from under it
+        // just breaks that working connection for no reason (its stale
+        // isOpen()/write state doesn't reliably self-heal).
+        if isDaemonRunning() {
+            setStatus("Daemon already running")
+        } else {
+            startDaemon(disconnectFirst: true)
+        }
     }
 
     func refreshTitle() {
