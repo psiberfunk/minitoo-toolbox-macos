@@ -2,6 +2,22 @@
 
 Notes from reversing the Divoom Android app + Android Bluetooth snoop captures, then validating sends from macOS.
 
+## ⚠️ Safety: opcodes that brick the device until power-cycle
+
+Cross-referenced from independent community reverse-engineering
+([bugzmanov/divoom-minitoo](https://github.com/bugzmanov/divoom-minitoo))
+and confirmed as real (if MiniToo-hostile) commands in a generic Divoom
+device map ([d03n3rfr1tz3/hass-divoom](https://github.com/d03n3rfr1tz3/hass-divoom)):
+sending these opcodes to a MiniToo puts it into a black-screen "sleep
+monitoring" state that does **not** respond to any recovery command
+(`Channel/OnOffScreen`, `Lyric/Enter`, `Photo/Enter`, `Channel/SetBrightness`,
+game-exit, screen-ctrl) — only a **hardware power-cycle** recovers it.
+
+**Never send:** `0x40` (set sleep auto off), `0xa3` (set sleep scene listen),
+`0xa4` (set scene vol), `0xad` (set sleep color), `0xae` (set sleep light).
+
+Do not probe this family further without a hardware power button within reach.
+
 ## Device / transport
 
 - Device: `Divoom MiniToo-Audio`
@@ -524,7 +540,15 @@ Captured Android actions:
 ```text
 custom face 1 -> ClockId 984
 custom face 2 -> ClockId 986
+custom face 3 -> ClockId 988
 ```
+
+Third face confirmed by independent community reverse-engineering
+([bugzmanov/divoom-minitoo](https://github.com/bugzmanov/divoom-minitoo),
+via an authenticated Divoom account probe of `Channel/MyClockGetList`) —
+not yet re-validated against our own device/account. MiniToo has exactly
+three user-visible custom clock/face pages (`ClockType` 3/4/5 respectively);
+that's a hardware/firmware limit, not an app UI limit.
 
 The app sends JSON command `Channel/SetClockSelectId` as generic command `0x01`.
 
@@ -586,3 +610,74 @@ No genuine screen-orientation/flip command was found elsewhere in the
 decompiled app for this device. Given MiniToo's fixed desk-facing form
 factor (unlike e.g. Tivoo's swiveling stand), it likely doesn't have a
 rotation feature at all. Not implemented in the Mac tooling.
+
+## Community cross-reference
+
+Independent prior work was reviewed and cross-checked against our own
+decompile-derived findings (2026-07-05). Sources:
+
+- [bugzmanov/divoom-minitoo](https://github.com/bugzmanov/divoom-minitoo) —
+  extensive empirical hardware probing against a MiniToo, same firmware
+  2.4.0. By far the richest source; see its `FINDINGS.md`.
+- [ztomer/divoom_lib](https://github.com/ztomer/divoom_lib) — includes a
+  scrape of Divoom's *official* developer docs
+  (`docs/divoom_docs/`, from `docin.divoom-gz.com`), the canonical
+  reference for opcode byte layouts across Divoom's whole product line.
+- [d03n3rfr1tz3/hass-divoom](https://github.com/d03n3rfr1tz3/hass-divoom) —
+  Home Assistant integration with a generic Divoom opcode map (not
+  MiniToo-specific, but useful cross-confirmation).
+- [estlin/divoom-stats](https://github.com/estlin/divoom-stats) — a Swift
+  macOS project that already consumes *our own* `PROTOCOL.md` for the
+  0x8b image path; no new findings, but confirms our envelope/checksum
+  understanding is being relied on elsewhere.
+
+### Confirmed matches (independent confirmation of what we already had)
+
+- Frame envelope (`01 len cmd body checksum 02`), checksum algorithm.
+- `0x74` = Set brightness, single byte 0-100 — matches the *official*
+  Divoom docs verbatim. This directly resolves a conflict where
+  bugzmanov's notes claimed `0x74` "not visible on MiniToo, `0x32` is the
+  one" — our own hardware test (dimmed at 10, full at 100) combined with
+  the official doc confirmation outweighs that untested claim. No action
+  needed; keep using `0x74`.
+- `0x43`/`0x42` = Set/Get alarm time, byte layout (`alarm_index, on_off,
+  hour, minute, week_bitmask, mode, trigger_mode, fm[2], volume`) —
+  matches the *official* Divoom docs (`alarm_memorial.md`) field-for-field
+  with what we independently derived from decompiling `CmdManager.x0()`.
+  This substantially raises confidence for the alarm feature: bugzmanov's
+  probe logged `0x42` as "silent" on their unit, but a passive GET probe
+  going unanswered doesn't necessarily mean `0x43` SET has no effect —
+  worth a direct, deliberate hardware test (set a near-future alarm, listen
+  for it to fire) rather than treating it as settled either way.
+- `0xa0` = Set game, `0x72` = Set tool view — matches our own findings.
+
+### New capabilities found (not yet implemented here)
+
+- **Screen on/off** — JSON `{"Command":"Channel/OnOffScreen","OnOff":0|1}`,
+  or raw `SPP_DIVOOM_EXTERN_CMD` (`0xBD`) + ext `SPP_SECOND_OPEN_SCREEN_CTRL`
+  (`0x2F`) with arg `0`=off, `1`=on/restore, `2`=no-op, `3`=off. Confirmed
+  working on real MiniToo hardware by bugzmanov. Simple, safe, good
+  candidate for the Mac menu bar.
+- **ANCS-style text notification** — opcode `0x50`
+  (`SPP_SET_ANDROID_ANCS`), body = `[icon_slot_u8, text_len_u8,
+  utf8_text...]`. Flashes an icon (24 preset app icons: Instagram,
+  WhatsApp, Discord, Telegram, etc.) + up to 128 bytes of text for ~1-3s,
+  then reverts to the previous view. No pixel upload needed. Confirmed
+  reliable on hardware. Good candidate for a quick "flash a status
+  message" feature.
+- **Tool views** (opcode `0x72`) — stopwatch, scoreboard, noise meter,
+  countdown. Scoreboard and noise meter are silent/safe; **stopwatch and
+  countdown trigger an audible alarm** when they cross a boundary/hit
+  zero — avoid at night. There is no software "return to clock face"
+  command for any tool view; only the physical button exits it.
+- **Third custom face** — see "Custom face selection" above.
+
+### Not incorporated
+
+The rest of bugzmanov's `FINDINGS.md` (photo/gallery upload, `0x8B` live
+animation variants, custom-face server-file emulation via fake `FileId`,
+eZip native-library bridging) covers ground our existing `0x8b` GIF path
+and `Channel/SetClockSelectId` custom-face switching already handle for
+our use case, or requires a Divoom cloud account (out of scope, same as
+the community-sync findings above). Not re-implemented here to avoid
+scope creep; revisit if a specific need comes up.
