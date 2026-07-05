@@ -147,7 +147,10 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Send Image/GIF/Video…", #selector(sendImage), enabled: daemonRunning))
         menu.addItem(item("Activate Custom Face 1", #selector(activateCustomFace1), enabled: daemonRunning))
         menu.addItem(item("Activate Custom Face 2", #selector(activateCustomFace2), enabled: daemonRunning))
+        menu.addItem(item("Activate Custom Face 3", #selector(activateCustomFace3), enabled: daemonRunning))
         menu.addItem(brightnessSliderItem(enabled: daemonRunning))
+        menu.addItem(item("Screen On", #selector(screenOnMenu), enabled: daemonRunning))
+        menu.addItem(item("Screen Off", #selector(screenOffMenu), enabled: daemonRunning))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Start Daemon (only if audio disconnected)", #selector(startDaemonMenu), enabled: !daemonRunning && !audioConnected))
         menu.addItem(item("Disconnect Audio + Start Daemon", #selector(disconnectAndStartMenu), enabled: !daemonRunning))
@@ -368,6 +371,33 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func activateCustomFace1() { activateClock("custom1") }
     @objc func activateCustomFace2() { activateClock("custom2") }
+    @objc func activateCustomFace3() { activateClock("custom3") }
+
+    func setScreen(on: Bool) {
+        let job: [String: Any] = [
+            "Command": "Channel/OnOffScreen",
+            "OnOff": on ? 1 : 0,
+            "DeviceId": 600111083,
+            "DevicePassword": 1777733348,
+            "Token": 1777741943,
+            "UserId": 404779143,
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: job) else {
+            setStatus("Screen \(on ? "on" : "off"): JSON encode error")
+            return
+        }
+        let packet = DivoomRawFrame.build(cmd: 0x01, body: body)
+        let path = DivoomRawFrame.writePacketsFile(packet, name: "screen-\(on ? "on" : "off")", in: capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                let hardFailure = result.contains("failed") || result.contains("error") || result.isEmpty
+                self?.setStatus(hardFailure ? "Screen issue: \(result)" : "Screen \(on ? "on" : "off")")
+            }
+        }
+    }
+
+    @objc func screenOnMenu() { setScreen(on: true) }
+    @objc func screenOffMenu() { setScreen(on: false) }
 
     func brightnessSliderItem(enabled: Bool) -> NSMenuItem {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 34))

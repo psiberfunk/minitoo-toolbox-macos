@@ -12,6 +12,11 @@ import send_divoom_image
 # official Divoom Android app (com.divoom.Divoom.bluetooth.CmdManager).
 CMD_SET_SYSTEM_BRIGHT = 0x74  # SPP_SET_SYSTEM_BRIGHT(116)
 
+DEFAULT_DEVICE_ID = 600111083
+DEFAULT_DEVICE_PASSWORD = 1777733348
+DEFAULT_TOKEN = 1777741943
+DEFAULT_USER_ID = 404779143
+
 
 def submit(host: str, port: int, packets_path: Path, delay: float = 0.012, dry_run: bool = False) -> dict:
     req = {"packets": str(packets_path.resolve()), "delay": delay, "dryRun": dry_run}
@@ -30,6 +35,28 @@ def submit(host: str, port: int, packets_path: Path, delay: float = 0.012, dry_r
 def build_brightness_packet(level: int) -> bytes:
     level = max(0, min(100, level))
     return send_divoom_image.frame(CMD_SET_SYSTEM_BRIGHT, bytes([level]))
+
+
+def build_screen_packet(
+    on: bool,
+    device_id: int = DEFAULT_DEVICE_ID,
+    device_password: int = DEFAULT_DEVICE_PASSWORD,
+    token: int = DEFAULT_TOKEN,
+    user_id: int = DEFAULT_USER_ID,
+) -> bytes:
+    # Channel/OnOffScreen, confirmed on real MiniToo hardware by community
+    # reverse engineering (bugzmanov/divoom-minitoo FINDINGS.md 5.3); screen
+    # returns to whatever view was last active, audio is unaffected.
+    payload = {
+        "Command": "Channel/OnOffScreen",
+        "OnOff": 1 if on else 0,
+        "DeviceId": device_id,
+        "DevicePassword": device_password,
+        "Token": token,
+        "UserId": user_id,
+    }
+    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+    return send_divoom_image.frame(0x01, body)
 
 
 def write_packet(out_dir: Path, name: str, packet: bytes) -> Path:
@@ -52,10 +79,17 @@ def main() -> int:
     p_bright = sub.add_parser("brightness", help="set screen brightness 0-100")
     p_bright.add_argument("level", type=int, help="brightness level 0-100")
 
+    p_screen = sub.add_parser("screen", help="turn the screen on or off (audio unaffected)")
+    p_screen.add_argument("state", choices=["on", "off"])
+
     args = parser.parse_args()
 
-    packet = build_brightness_packet(args.level)
-    name = f"brightness-{args.level}"
+    if args.action == "screen":
+        packet = build_screen_packet(on=args.state == "on")
+        name = f"screen-{args.state}"
+    else:
+        packet = build_brightness_packet(args.level)
+        name = f"brightness-{args.level}"
 
     out_path = write_packet(args.out_dir, name, packet)
     print(f"packet={out_path} len={len(packet)}")

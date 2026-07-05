@@ -57,7 +57,7 @@ def build_select_clock_packet(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Select a Divoom custom clock face over the RFCOMM daemon")
-    parser.add_argument("clock", help="clock id or shortcut: 1/custom1=984, 2/custom2=986")
+    parser.add_argument("clock", help="clock id or shortcut: 1/custom1=984, 2/custom2=986, 3/custom3=988")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=40583)
     parser.add_argument("--out-dir", type=Path, default=Path("captures/mac-send"))
@@ -69,7 +69,11 @@ def main() -> int:
     parser.add_argument("--user-id", type=int, default=DEFAULT_USER_ID)
     args = parser.parse_args()
 
-    shortcuts = {"1": 984, "custom1": 984, "face1": 984, "2": 986, "custom2": 986, "face2": 986}
+    shortcuts = {
+        "1": 984, "custom1": 984, "face1": 984,
+        "2": 986, "custom2": 986, "face2": 986,
+        "3": 988, "custom3": 988, "face3": 988,
+    }
     clock_id = shortcuts.get(args.clock.lower(), None)
     if clock_id is None:
         clock_id = int(args.clock)
