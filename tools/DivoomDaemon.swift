@@ -158,6 +158,15 @@ final class DivoomDaemon {
             throw NSError(domain: "DivoomDaemon", code: 4, userInfo: [NSLocalizedDescriptionKey: "No packets"])
         }
         try sendPacket(first)
+
+        // Single-packet jobs (e.g. brightness, a raw opcode) are fire-and-forget:
+        // only the chunked GIF/photo transfer protocol produces a request/ACK
+        // handshake, so waiting up to 4.6s for frames that will never arrive
+        // just serializes unrelated quick commands behind a pointless timeout.
+        if packets.count == 1 {
+            return JobResponse(ok: true, message: "sent", packets: 1, bytes: totalBytes, sawRequest: nil, sawAck: nil)
+        }
+
         let sawRequestEarly = waitFor(requestFrame, timeout: 0.6)
 
         for (idx, pkt) in packets.dropFirst().enumerated() {
