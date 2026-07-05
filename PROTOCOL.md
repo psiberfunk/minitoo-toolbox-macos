@@ -681,3 +681,70 @@ and `Channel/SetClockSelectId` custom-face switching already handle for
 our use case, or requires a Divoom cloud account (out of scope, same as
 the community-sync findings above). Not re-implemented here to avoid
 scope creep; revisit if a specific need comes up.
+
+## White noise
+
+**Confirmed Bluetooth-reachable and working**, correcting an earlier
+conclusion in this document. The command-routing classification in the
+decompiled APK (`HttpCommand.java`'s static arrays) suggested `WhiteNoise/*`
+was HTTP-only, but the actual runtime call in
+`com/divoom/Divoom/view/fragment/whiteNoise/model/WhiteNoiseModel.java`
+branches on device architecture:
+
+```java
+if (DeviceFunction.WifiBlueArchEnum.getMode() == DeviceFunction.WifiBlueArchEnum.BlueArchMode) {
+    q.s().B(whiteNoiseSetRequest);   // direct Bluetooth SPP_JSON send
+} else {
+    // HTTP path, WiFi-arch devices only
+}
+```
+
+MiniToo is `BlueArchMode`, so both `WhiteNoise/Get` and `WhiteNoise/Set` go
+straight over Bluetooth SPP_JSON (cmd `0x01`), the same path as the
+already-working `Channel/SetClockSelectId`.
+
+### JSON structure
+
+```json
+{"Command":"WhiteNoise/Set","OnOff":0|1,"Time":<minutes,0=permanent>,"EndStatus":0|1,"Volume":[v0,v1,...,v7]}
+```
+
+- `Volume` is an 8-element array, one entry per ambient sound, range 0-100.
+  Multiple channels can be non-zero simultaneously — the device **mixes**
+  them (confirmed on hardware: rain + fire play together).
+- `OnOff` is a master switch; `Time` is an optional sleep-timer duration in
+  minutes (`0` = no timer); `EndStatus` meaning not fully mapped (tied to
+  two UI radio buttons, `rb_shutdown`/`rb_standby`, in
+  `WhiteNoiseMainFragment.java` — left at `0` in our tooling).
+- Setting any channel to a non-zero volume while `OnOff:1` is enough to
+  make that sound play; `OnOff:1` with an all-zero `Volume` array is
+  silent (master on, everything muted) — this is almost certainly why an
+  earlier community probe (bugzmanov, naive `WhiteNoise/Set` test) saw "no
+  visible effect": their own `WhiteNoise/Get` snapshot showed an all-zero
+  `Volume` array.
+
+### Channel mapping
+
+Confirmed by ear against real hardware, 2026-07-05:
+
+| Index | Sound |
+| --- | --- |
+| 0 | Fan |
+| 1 | Frogs |
+| 2 | Fire |
+| 3 | Waves |
+| 4 | Rain |
+| 5 | River |
+| 6 | Birdsong |
+| 7 | Singing bowls |
+
+CLI:
+
+```bash
+.venv/bin/python tools/divoom_whitenoise.py get
+.venv/bin/python tools/divoom_whitenoise.py set rain 40
+.venv/bin/python tools/divoom_whitenoise.py off
+```
+
+The menu bar app exposes all 8 channels as independent sliders (mixable),
+plus an "Off (all channels)" reset, under White Noise.
