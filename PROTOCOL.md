@@ -492,17 +492,30 @@ Menu-bar title:
 
 Menu actions:
 
-- `Send Image/GIF/Video…`
-  - Choose a PNG/JPEG/GIF/video file.
-  - Uses `.venv/bin/python tools/divoom_send.py <image>`.
-  - Disabled while daemon is stopped.
-- `Activate Custom Face 1`
-  - Sends captured `Channel/SetClockSelectId` for `ClockId=984`.
-  - Uses `.venv/bin/python tools/divoom_clock.py custom1`.
-  - Disabled while daemon is stopped.
-- `Activate Custom Face 2`
-  - Sends captured `Channel/SetClockSelectId` for `ClockId=986`.
-  - Uses `.venv/bin/python tools/divoom_clock.py custom2`.
+- `Open Control Center…`
+  - Opens a separate SwiftUI window (`tools/DivoomControlCenter.swift`) with
+    a home grid of function icons — matches the real Divoom app's own
+    navigation (tap an icon, drill into its controls, "Functions" back
+    button to return), rather than a tab bar. Screens:
+    - **Send Media** — choose a PNG/JPEG/GIF/video, builds and shows a
+      preview (via `divoom_send.py --build-only`) before committing to the
+      multi-second chunked upload, then "Send to Device".
+    - **White Noise** — the 8 per-channel volume sliders plus a real on/off
+      `Toggle` (replacing the old menu-only "off" item). Queries the
+      device's actual current state (`WhiteNoise/Get`) on open, via a
+      manual "Check Current State" button, and via a 3s auto-refresh timer
+      that only runs while this screen is visible. Any toggle/slider edit
+      re-fetches real device state first and applies the one change on top
+      of it, so it can't clobber other channels back to stale local values.
+    - **Custom Faces** — buttons to activate custom face 1/2/3.
+  - Each screen resizes the window to its own actual measured content size
+    (a `GeometryReader`-based mechanism, not hand-picked constants).
+- Brightness slider (menu item, not in Control Center)
+  - Native fast-path: builds `SPP_SET_SYSTEM_BRIGHT` (`0x74`) directly and
+    talks to the daemon's TCP job socket, skipping Python/venv spin-up so
+    dragging feels responsive.
+- `Screen On` / `Screen Off`
+  - JSON `Channel/OnOffScreen`, native fast-path like brightness.
   - Disabled while daemon is stopped.
 - `Start Daemon`
   - Starts `tools/divoom-daemon` without disconnecting audio first.
@@ -522,16 +535,19 @@ Menu actions:
 - `Reconnect Divoom Audio`
   - Requests normal macOS Bluetooth reconnect.
   - Disabled when audio profile is already connected.
-- `Open Captures Folder`
-  - Opens `captures/mac-send`.
-- `Open Protocol Notes`
-  - Opens this file.
+- `Debugging Tools` submenu — `Open Captures Folder`, `Open Protocol Notes`,
+  `Open Menu Log`, `Open Daemon Log` (grouped here once the menu started
+  accumulating flat "Open ..." items that aren't day-to-day controls).
 
 Current UX notes:
 
 - The menu refreshes when opened, so daemon/audio status should reflect current state.
 - The app avoids modal success/error popups; status appears as the `Last:` line in the menu.
 - The packaged `.app` can be copied into `/Applications`; opening it is enough to disconnect audio once and start the daemon.
+- Signed with any available codesigning identity (not ad-hoc) so macOS
+  Bluetooth permission persists across rebuilds instead of re-prompting
+  every time — ad-hoc signing has no Team ID, so TCC keys the grant off the
+  binary's hash, which changes on every recompile.
 
 ## Custom face selection
 
@@ -651,26 +667,32 @@ decompile-derived findings (2026-07-05). Sources:
   for it to fire) rather than treating it as settled either way.
 - `0xa0` = Set game, `0x72` = Set tool view — matches our own findings.
 
-### New capabilities found (not yet implemented here)
+### New capabilities found
 
 - **Screen on/off** — JSON `{"Command":"Channel/OnOffScreen","OnOff":0|1}`,
   or raw `SPP_DIVOOM_EXTERN_CMD` (`0xBD`) + ext `SPP_SECOND_OPEN_SCREEN_CTRL`
   (`0x2F`) with arg `0`=off, `1`=on/restore, `2`=no-op, `3`=off. Confirmed
-  working on real MiniToo hardware by bugzmanov. Simple, safe, good
-  candidate for the Mac menu bar.
+  working on real MiniToo hardware by bugzmanov, and independently
+  hardware-tested here. **Implemented** — `tools/divoom_display.py screen
+  on|off` plus a `Screen On`/`Screen Off` menu-bar item (native fast-path).
+- **Third custom face** — see "Custom face selection" above. **Implemented**
+  — `ClockId 988` wired into `tools/divoom_clock.py`'s shortcut dict and
+  Control Center's "Custom Faces" screen.
+
+### Not yet implemented here
+
 - **ANCS-style text notification** — opcode `0x50`
   (`SPP_SET_ANDROID_ANCS`), body = `[icon_slot_u8, text_len_u8,
   utf8_text...]`. Flashes an icon (24 preset app icons: Instagram,
   WhatsApp, Discord, Telegram, etc.) + up to 128 bytes of text for ~1-3s,
   then reverts to the previous view. No pixel upload needed. Confirmed
   reliable on hardware. Good candidate for a quick "flash a status
-  message" feature.
+  message" feature — a natural fit as a composer screen in Control Center.
 - **Tool views** (opcode `0x72`) — stopwatch, scoreboard, noise meter,
   countdown. Scoreboard and noise meter are silent/safe; **stopwatch and
   countdown trigger an audible alarm** when they cross a boundary/hit
   zero — avoid at night. There is no software "return to clock face"
   command for any tool view; only the physical button exits it.
-- **Third custom face** — see "Custom face selection" above.
 
 ### Not incorporated
 
