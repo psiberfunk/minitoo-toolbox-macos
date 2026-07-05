@@ -544,3 +544,22 @@ CLI:
 # or any explicit clock id:
 .venv/bin/python tools/divoom_clock.py 984
 ```
+
+## Display settings: brightness
+
+Reverse-engineered from the official Divoom Android app's `CmdManager.x2(byte)`,
+which calls `SppProc$CMD_TYPE.SPP_SET_SYSTEM_BRIGHT` (opcode `116` / `0x74`).
+
+```text
+cmd  = 0x74
+body = <level_u8>   # 0-100
+```
+
+Validated on device: `level=10` visibly dims the screen, `level=100` returns
+it to full brightness.
+
+CLI:
+
+```bash
+.venv/bin/python tools/divoom_display.py brightness 100
+```
