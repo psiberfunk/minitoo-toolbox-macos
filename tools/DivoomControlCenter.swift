@@ -98,7 +98,7 @@ final class ControlCenterModel: ObservableObject {
     }
 }
 
-struct ControlCenterView: View {
+struct SendMediaView: View {
     @ObservedObject var model: ControlCenterModel
 
     var body: some View {
@@ -147,24 +147,293 @@ struct ControlCenterView: View {
             }
         }
         .padding(20)
-        .frame(width: 480, height: 300)
+        .onAppear { model.app.resizeControlCenterWindow(to: NSSize(width: 480, height: 300)) }
+    }
+}
+
+/// Native builder/sender for WhiteNoise/Set, same raw-frame fast path as
+/// brightness: talks straight to the daemon's TCP job socket so dragging a
+/// volume slider feels responsive instead of shelling out to Python per drag.
+final class WhiteNoiseModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+    static let channelNames = ["fan", "frogs", "fire", "waves", "rain", "river", "birdsong", "singingbowls"]
+
+    @Published var isOn: Bool = false
+    @Published var volumes: [Int] = Array(repeating: 0, count: WhiteNoiseModel.channelNames.count)
+    @Published var status: String = "Off"
+    @Published var isBusy: Bool = false
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+    }
+
+    func setOn(_ on: Bool) {
+        isOn = on
+        send()
+    }
+
+    func sliderChanged(index: Int, value: Int) {
+        volumes[index] = value
+        send()
+    }
+
+    func send() {
+        isBusy = true
+        status = isOn ? "Updating…" : "Turning off…"
+        let job: [String: Any] = [
+            "Command": "WhiteNoise/Set",
+            "OnOff": isOn ? 1 : 0,
+            "Time": 0,
+            "EndStatus": 0,
+            "Volume": volumes,
+            "DeviceId": 600111083,
+            "DevicePassword": 1777733348,
+            "Token": 1777741943,
+            "UserId": 404779143,
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: job) else {
+            isBusy = false
+            status = "JSON encode error"
+            return
+        }
+        let packet = DivoomRawFrame.build(cmd: 0x01, body: body)
+        let path = DivoomRawFrame.writePacketsFile(packet, name: "whitenoise-set", in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                let hardFailure = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                self.status = hardFailure ? "White noise issue: \(result)" : (self.isOn ? "Playing" : "Off")
+            }
+        }
+    }
+}
+
+struct WhiteNoiseView: View {
+    @ObservedObject var model: WhiteNoiseModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Toggle(isOn: Binding(get: { model.isOn }, set: { model.setOn($0) })) {
+                Text("White Noise").font(.headline)
+            }
+            .toggleStyle(.switch)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(WhiteNoiseModel.channelNames.enumerated()), id: \.offset) { index, name in
+                    HStack {
+                        Text(name.capitalized)
+                            .frame(width: 90, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { Double(model.volumes[index]) },
+                                set: { model.volumes[index] = Int($0) }
+                            ),
+                            in: 0...100,
+                            onEditingChanged: { editing in
+                                if !editing { model.sliderChanged(index: index, value: model.volumes[index]) }
+                            }
+                        )
+                        .frame(width: 220)
+                        Text("\(model.volumes[index])")
+                            .frame(width: 32, alignment: .trailing)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                if model.isBusy {
+                    ProgressView().controlSize(.small)
+                }
+                Text(model.status).font(.caption).foregroundColor(.secondary)
+            }
+        }
+        .padding(20)
+        .onAppear { model.app.resizeControlCenterWindow(to: NSSize(width: 420, height: 400)) }
+    }
+}
+
+/// Mirrors the native Divoom app's navigation: a home grid of function icons,
+/// tap one to drill into its controls, then back out to pick another.
+enum ControlCenterFunction: String, CaseIterable, Identifiable {
+    case sendMedia
+    case whiteNoise
+    case customFaces
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .sendMedia: return "Send Media"
+        case .whiteNoise: return "White Noise"
+        case .customFaces: return "Custom Faces"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .sendMedia: return "photo"
+        case .whiteNoise: return "waveform"
+        case .customFaces: return "square.stack.3d.up"
+        }
+    }
+}
+
+/// Thin wrapper over DivoomMenuBar.activateClock, giving the Control Center
+/// its own live busy/status feedback instead of only updating the shared
+/// menu-bar status line.
+final class CustomFacesModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+    static let faces = [("custom1", "Custom Face 1"), ("custom2", "Custom Face 2"), ("custom3", "Custom Face 3")]
+
+    @Published var status: String = "Choose a custom face to activate."
+    @Published var isBusy: Bool = false
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+    }
+
+    func activate(shortcut: String, label: String) {
+        isBusy = true
+        status = "Activating \(label)…"
+        app.activateClock(shortcut) { [weak self] success, detail in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                self.status = success ? "Activated \(label)." : "Issue: \(detail)"
+            }
+        }
+    }
+}
+
+struct CustomFacesView: View {
+    @ObservedObject var model: CustomFacesModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Custom Faces").font(.headline)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(CustomFacesModel.faces, id: \.0) { shortcut, label in
+                    Button(label) { model.activate(shortcut: shortcut, label: label) }
+                        .disabled(model.isBusy)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            HStack(spacing: 8) {
+                if model.isBusy {
+                    ProgressView().controlSize(.small)
+                }
+                Text(model.status).font(.caption).foregroundColor(.secondary)
+            }
+        }
+        .padding(20)
+        .onAppear { model.app.resizeControlCenterWindow(to: NSSize(width: 320, height: 220)) }
+    }
+}
+
+struct ControlCenterView: View {
+    @ObservedObject var sendModel: ControlCenterModel
+    @ObservedObject var whiteNoiseModel: WhiteNoiseModel
+    @ObservedObject var customFacesModel: CustomFacesModel
+    @State private var selection: ControlCenterFunction?
+
+    var body: some View {
+        Group {
+            if let selection {
+                VStack(alignment: .leading, spacing: 0) {
+                    Button(action: { self.selection = nil }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Functions")
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.accentColor)
+                    .padding([.top, .horizontal], 14)
+
+                    detailView(for: selection)
+                }
+            } else {
+                functionGrid
+                    .onAppear { sendModel.app.resizeControlCenterWindow(to: NSSize(width: 360, height: 160)) }
+            }
+        }
+    }
+
+    private var functionGrid: some View {
+        HStack(spacing: 20) {
+            ForEach(ControlCenterFunction.allCases) { function in
+                Button(action: { selection = function }) {
+                    VStack(spacing: 8) {
+                        Image(systemName: function.icon)
+                            .font(.system(size: 32))
+                            .frame(width: 64, height: 64)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.12)))
+                        Text(function.title).font(.callout)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(24)
+    }
+
+    @ViewBuilder
+    private func detailView(for function: ControlCenterFunction) -> some View {
+        switch function {
+        case .sendMedia: SendMediaView(model: sendModel)
+        case .whiteNoise: WhiteNoiseView(model: whiteNoiseModel)
+        case .customFaces: CustomFacesView(model: customFacesModel)
+        }
     }
 }
 
 extension DivoomMenuBar {
     @objc func openControlCenter() {
+        var isNewWindow = false
         if controlCenterWindow == nil {
-            let model = ControlCenterModel(app: self)
-            controlCenterModel = model
-            let hosting = NSHostingController(rootView: ControlCenterView(model: model))
+            isNewWindow = true
+            let sendModel = ControlCenterModel(app: self)
+            controlCenterModel = sendModel
+            let whiteNoiseModel = WhiteNoiseModel(app: self)
+            self.whiteNoiseModel = whiteNoiseModel
+            let customFacesModel = CustomFacesModel(app: self)
+            self.customFacesModel = customFacesModel
+            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Divoom Control Center"
             window.styleMask = [.titled, .closable, .miniaturizable]
             window.isReleasedWhenClosed = false
+            // Wide/tall enough that the title text and traffic-light buttons
+            // never feel cramped, even when showing the small icon grid.
+            window.contentMinSize = NSSize(width: 320, height: 150)
             controlCenterWindow = window
         }
-        controlCenterWindow?.center()
+        if isNewWindow {
+            controlCenterWindow?.setContentSize(NSSize(width: 280, height: 160))
+            controlCenterWindow?.center()
+        }
         controlCenterWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // Each screen (function grid vs. a drilled-into detail view) declares its
+    // own natural size via onAppear, instead of the window being one fixed
+    // size regardless of which screen is showing. Keeps the top-left corner
+    // anchored while resizing, matching the rest of macOS's window behavior.
+    func resizeControlCenterWindow(to contentSize: NSSize) {
+        guard let window = controlCenterWindow else { return }
+        let clamped = NSSize(
+            width: max(contentSize.width, window.contentMinSize.width),
+            height: max(contentSize.height, window.contentMinSize.height)
+        )
+        let newFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: clamped))
+        var frame = window.frame
+        frame.origin.y += frame.size.height - newFrame.size.height
+        frame.size = newFrame.size
+        window.setFrame(frame, display: true, animate: true)
     }
 }

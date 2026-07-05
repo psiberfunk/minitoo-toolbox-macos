@@ -84,11 +84,12 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var statusItemViewTimer: Timer?
     var controlCenterWindow: NSWindow?
     var controlCenterModel: ControlCenterModel?
+    var whiteNoiseModel: WhiteNoiseModel?
+    var customFacesModel: CustomFacesModel?
     var lastMessage = "Ready"
     var lastBrightness: Int = 100
-    var whiteNoiseVolumes: [Int] = Array(repeating: 0, count: 8)
 
-    let address = "B1:21:81:6F:4D:F0"
+    let address = "B1:21:81:B1:F0:84"
     let channel = "1"
     let daemonPort = "40583"
     var menuLog: URL { supportDir.appendingPathComponent("divoom-menubar.log") }
@@ -157,11 +158,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(disabled("Last: \(shortStatus(lastMessage))"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
-        menu.addItem(item("Activate Custom Face 1", #selector(activateCustomFace1), enabled: daemonRunning))
-        menu.addItem(item("Activate Custom Face 2", #selector(activateCustomFace2), enabled: daemonRunning))
-        menu.addItem(item("Activate Custom Face 3", #selector(activateCustomFace3), enabled: daemonRunning))
         menu.addItem(brightnessSliderItem(enabled: daemonRunning))
-        menu.addItem(whiteNoiseSubmenu(enabled: daemonRunning))
         menu.addItem(item("Screen On", #selector(screenOnMenu), enabled: daemonRunning))
         menu.addItem(item("Screen Off", #selector(screenOffMenu), enabled: daemonRunning))
         menu.addItem(NSMenuItem.separator())
@@ -350,10 +347,11 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    func activateClock(_ shortcut: String) {
+    func activateClock(_ shortcut: String, completion: ((Bool, String) -> Void)? = nil) {
         DispatchQueue.global(qos: .userInitiated).async {
             if !self.isDaemonRunning() {
                 self.setStatus("Daemon not running")
+                completion?(false, "Daemon not running")
                 return
             }
             let py = self.pythonExecutable()
@@ -361,87 +359,9 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let (code, out) = self.run(py, [client, shortcut])
             let detail = String(out.suffix(700))
             self.setStatus(code == 0 ? "Activated custom face \(shortcut)" : "Clock issue: \(detail)")
+            completion?(code == 0, detail)
         }
     }
-
-    static let whiteNoiseChannels = ["fan", "frogs", "fire", "waves", "rain", "river", "birdsong", "singingbowls"]
-
-    func whiteNoiseSubmenu(enabled: Bool) -> NSMenuItem {
-        let parent = NSMenuItem(title: "White Noise", action: nil, keyEquivalent: "")
-        parent.isEnabled = enabled
-        let submenu = NSMenu()
-        for (index, name) in Self.whiteNoiseChannels.enumerated() {
-            submenu.addItem(whiteNoiseSliderItem(index: index, name: name, enabled: enabled))
-        }
-        submenu.addItem(NSMenuItem.separator())
-        submenu.addItem(item("Off (all channels)", #selector(whiteNoiseOffMenu), enabled: enabled))
-        parent.submenu = submenu
-        return parent
-    }
-
-    // Each sound mixes independently (matching the real app's WhiteNoiseAdapter:
-    // one volume slider per channel, all can play together), not an exclusive choice.
-    func whiteNoiseSliderItem(index: Int, name: String, enabled: Bool) -> NSMenuItem {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 30))
-
-        let label = NSTextField(labelWithString: name.capitalized)
-        label.frame = NSRect(x: 14, y: 6, width: 74, height: 18)
-        label.font = NSFont.menuFont(ofSize: 0)
-        label.isEnabled = enabled
-        container.addSubview(label)
-
-        let slider = NSSlider(value: Double(whiteNoiseVolumes[index]), minValue: 0, maxValue: 100, target: self, action: #selector(whiteNoiseSliderChanged(_:)))
-        slider.frame = NSRect(x: 92, y: 4, width: 116, height: 20)
-        slider.tag = index
-        slider.isContinuous = false
-        slider.isEnabled = enabled
-        container.addSubview(slider)
-
-        let menuItem = NSMenuItem()
-        menuItem.view = container
-        return menuItem
-    }
-
-    @objc func whiteNoiseSliderChanged(_ sender: NSSlider) {
-        whiteNoiseVolumes[sender.tag] = Int(sender.intValue)
-        sendWhiteNoiseState()
-    }
-
-    @objc func whiteNoiseOffMenu() {
-        whiteNoiseVolumes = Array(repeating: 0, count: Self.whiteNoiseChannels.count)
-        sendWhiteNoiseState()
-    }
-
-    func sendWhiteNoiseState() {
-        let onOff = whiteNoiseVolumes.contains(where: { $0 > 0 }) ? 1 : 0
-        let job: [String: Any] = [
-            "Command": "WhiteNoise/Set",
-            "OnOff": onOff,
-            "Time": 0,
-            "EndStatus": 0,
-            "Volume": whiteNoiseVolumes,
-            "DeviceId": 600111083,
-            "DevicePassword": 1777733348,
-            "Token": 1777741943,
-            "UserId": 404779143,
-        ]
-        guard let body = try? JSONSerialization.data(withJSONObject: job) else {
-            setStatus("White noise: JSON encode error")
-            return
-        }
-        let packet = DivoomRawFrame.build(cmd: 0x01, body: body)
-        let path = DivoomRawFrame.writePacketsFile(packet, name: "whitenoise-set", in: capturesDir)
-        DivoomRawFrame.submit(packetsPath: path, port: UInt16(daemonPort) ?? 40583) { [weak self] result in
-            DispatchQueue.main.async {
-                let hardFailure = result.contains("failed") || result.contains("error") || result.isEmpty
-                self?.setStatus(hardFailure ? "White noise issue: \(result)" : "White noise updated")
-            }
-        }
-    }
-
-    @objc func activateCustomFace1() { activateClock("custom1") }
-    @objc func activateCustomFace2() { activateClock("custom2") }
-    @objc func activateCustomFace3() { activateClock("custom3") }
 
     func setScreen(on: Bool) {
         let job: [String: Any] = [
