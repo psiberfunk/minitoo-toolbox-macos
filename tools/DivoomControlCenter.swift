@@ -1,6 +1,32 @@
 import AppKit
 import SwiftUI
 
+private struct ControlCenterSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
+extension View {
+    /// Resizes the Control Center window to this view's actual rendered
+    /// size instead of a hand-picked constant — one fewer magic number to
+    /// keep in sync with whatever the content really needs, and it stays
+    /// correct automatically if the content ever changes.
+    func sizesControlCenterWindow(_ app: DivoomMenuBar) -> some View {
+        background(
+            GeometryReader { geo in
+                Color.clear.preference(key: ControlCenterSizeKey.self, value: geo.size)
+            }
+        )
+        .onPreferenceChange(ControlCenterSizeKey.self) { size in
+            guard size.width > 1, size.height > 1 else { return }
+            app.resizeControlCenterWindow(to: size)
+        }
+    }
+}
+
 /// Builds a preview via divoom_send.py --build-only before committing to a
 /// multi-second chunked upload, instead of sending media blind.
 final class ControlCenterModel: ObservableObject {
@@ -147,7 +173,7 @@ struct SendMediaView: View {
             }
         }
         .padding(20)
-        .onAppear { model.app.resizeControlCenterWindow(to: NSSize(width: 480, height: 300)) }
+        .sizesControlCenterWindow(model.app)
     }
 }
 
@@ -345,8 +371,8 @@ struct WhiteNoiseView: View {
             }
         }
         .padding(20)
+        .sizesControlCenterWindow(model.app)
         .onAppear {
-            model.app.resizeControlCenterWindow(to: NSSize(width: 420, height: 400))
             model.refresh()
             model.startAutoRefresh()
         }
@@ -430,7 +456,7 @@ struct CustomFacesView: View {
             }
         }
         .padding(20)
-        .onAppear { model.app.resizeControlCenterWindow(to: NSSize(width: 320, height: 220)) }
+        .sizesControlCenterWindow(model.app)
     }
 }
 
@@ -457,9 +483,18 @@ struct ControlCenterView: View {
 
                     detailView(for: selection)
                 }
+                // Without this, the VStack is only as wide as its widest
+                // child, so every time a status label changes length the
+                // *entire* block gets re-centered within the window — the
+                // whole screen visibly jitters, not just the status text.
+                // Anchoring to a fixed top-leading frame keeps everything's
+                // position stable regardless of how the status text's width
+                // fluctuates.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 functionGrid
-                    .onAppear { sendModel.app.resizeControlCenterWindow(to: NSSize(width: 360, height: 160)) }
+                    .sizesControlCenterWindow(sendModel.app)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
     }
@@ -521,7 +556,12 @@ extension DivoomMenuBar {
             }
         }
         if isNewWindow {
-            controlCenterWindow?.setContentSize(NSSize(width: 280, height: 160))
+            // Starts at the window's minimum size — comfortably wide enough
+            // that the icon grid's very first layout pass doesn't truncate
+            // any labels — and the size-reporting content immediately
+            // corrects it to the icon grid's actual measured size a moment
+            // later.
+            controlCenterWindow?.setContentSize(controlCenterWindow?.contentMinSize ?? NSSize(width: 320, height: 150))
             controlCenterWindow?.center()
         }
         controlCenterWindow?.makeKeyAndOrderFront(nil)
