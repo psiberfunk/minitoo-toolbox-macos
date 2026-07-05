@@ -37,7 +37,7 @@ enum DivoomRawFrame {
         return path
     }
 
-    static func submit(packetsPath: URL, port: UInt16, completion: @escaping (String) -> Void) {
+    static func submit(packetsPath: URL, port: UInt16, waitForReply: Double = 0, completion: @escaping (String) -> Void) {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             completion("bad port")
             return
@@ -46,7 +46,8 @@ enum DivoomRawFrame {
         conn.stateUpdateHandler = { state in
             switch state {
             case .ready:
-                let job: [String: Any] = ["packets": packetsPath.path, "delay": 0.012, "dryRun": false]
+                var job: [String: Any] = ["packets": packetsPath.path, "delay": 0.012, "dryRun": false]
+                if waitForReply > 0 { job["waitForReply"] = waitForReply }
                 guard let data = try? JSONSerialization.data(withJSONObject: job) else {
                     completion("job encode error")
                     conn.cancel()
