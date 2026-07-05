@@ -9,12 +9,14 @@ struct JobResponse: Codable {
     let bytes: Int?
     let sawRequest: Bool?
     let sawAck: Bool?
+    let reply: String?
 }
 
 struct JobRequest: Codable {
     let packets: String?
     let delay: Double?
     let dryRun: Bool?
+    let waitForReply: Double?
 }
 
 final class RFCOMMDelegate: NSObject, IOBluetoothRFCOMMChannelDelegate {
@@ -143,13 +145,13 @@ final class DivoomDaemon {
         }
     }
 
-    func sendJob(packetPath: String, delay: Double, dryRun: Bool) throws -> JobResponse {
+    func sendJob(packetPath: String, delay: Double, dryRun: Bool, waitForReply: Double? = nil) throws -> JobResponse {
         let url = URL(fileURLWithPath: packetPath)
         let data = try Data(contentsOf: url)
         let packets = try parsePackets(data)
         let totalBytes = packets.reduce(0) { $0 + $1.count }
         if dryRun {
-            return JobResponse(ok: true, message: "dry run", packets: packets.count, bytes: totalBytes, sawRequest: nil, sawAck: nil)
+            return JobResponse(ok: true, message: "dry run", packets: packets.count, bytes: totalBytes, sawRequest: nil, sawAck: nil, reply: nil)
         }
         try openRFCOMM()
         delegate.resetRx()
@@ -163,8 +165,14 @@ final class DivoomDaemon {
         // only the chunked GIF/photo transfer protocol produces a request/ACK
         // handshake, so waiting up to 4.6s for frames that will never arrive
         // just serializes unrelated quick commands behind a pointless timeout.
+        // A caller can opt into waiting a bit for a JSON reply instead (e.g. a
+        // ".../Get" query) via waitForReply, since the device does send one.
         if packets.count == 1 {
-            return JobResponse(ok: true, message: "sent", packets: 1, bytes: totalBytes, sawRequest: nil, sawAck: nil)
+            var reply: String?
+            if let waitForReply, waitForReply > 0 {
+                reply = waitForJSONReply(timeout: waitForReply)
+            }
+            return JobResponse(ok: true, message: "sent", packets: 1, bytes: totalBytes, sawRequest: nil, sawAck: nil, reply: reply)
         }
 
         let sawRequestEarly = waitFor(requestFrame, timeout: 0.6)
@@ -179,7 +187,47 @@ final class DivoomDaemon {
         }
         let sawAck = waitFor(ackFrame, timeout: 4.0)
         let sawRequest = sawRequestEarly || delegate.contains(requestFrame)
-        return JobResponse(ok: sawAck, message: sawAck ? "sent" : "sent but final ACK not observed", packets: packets.count, bytes: totalBytes, sawRequest: sawRequest, sawAck: sawAck)
+        return JobResponse(ok: sawAck, message: sawAck ? "sent" : "sent but final ACK not observed", packets: packets.count, bytes: totalBytes, sawRequest: sawRequest, sawAck: sawAck, reply: nil)
+    }
+
+    // Polls the RFCOMM delegate's captured inbound bytes for a frame carrying
+    // a JSON payload (cmd 0x04, the device's generic response wrapper — see
+    // PROTOCOL.md). Frames are `0x01 <len LE16> <cmd> <body...> <chk LE16>
+    // 0x02`; the body of a JSON-bearing reply contains the actual `{...}`
+    // text after a couple of header bytes whose exact meaning isn't fully
+    // decoded, so this just extracts the first-to-last `{`/`}` span instead
+    // of assuming a fixed offset.
+    func waitForJSONReply(timeout: Double) -> String? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let json = Self.extractJSONReply(from: delegate.rxSnapshot()) { return json }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        return Self.extractJSONReply(from: delegate.rxSnapshot())
+    }
+
+    static func extractJSONReply(from data: Data) -> String? {
+        var off = 0
+        var found: String?
+        while off + 4 <= data.count {
+            guard data[off] == 0x01 else { off += 1; continue }
+            let len = Int(data[off + 1]) | (Int(data[off + 2]) << 8)
+            let frameEnd = off + 4 + len
+            guard len >= 3, frameEnd <= data.count, data[frameEnd - 1] == 0x02 else { off += 1; continue }
+            let cmd = data[off + 3]
+            if cmd == 0x04 {
+                let body = data[(off + 4)..<(frameEnd - 3)]
+                if let openBrace = body.firstIndex(of: 0x7b), let closeBrace = body.lastIndex(of: 0x7d), openBrace < closeBrace {
+                    let candidate = body[openBrace...closeBrace]
+                    if let text = String(data: candidate, encoding: .utf8),
+                       (try? JSONSerialization.jsonObject(with: candidate)) != nil {
+                        found = text
+                    }
+                }
+            }
+            off = frameEnd
+        }
+        return found
     }
 
     func startServer() throws {
@@ -200,11 +248,11 @@ final class DivoomDaemon {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, _, error in
             guard let self else { return }
             if let error {
-                self.reply(conn, JobResponse(ok: false, message: "receive error: \(error)", packets: nil, bytes: nil, sawRequest: nil, sawAck: nil))
+                self.reply(conn, JobResponse(ok: false, message: "receive error: \(error)", packets: nil, bytes: nil, sawRequest: nil, sawAck: nil, reply: nil))
                 return
             }
             guard let data, !data.isEmpty else {
-                self.reply(conn, JobResponse(ok: false, message: "empty request", packets: nil, bytes: nil, sawRequest: nil, sawAck: nil))
+                self.reply(conn, JobResponse(ok: false, message: "empty request", packets: nil, bytes: nil, sawRequest: nil, sawAck: nil, reply: nil))
                 return
             }
             self.sendQueue.async {
@@ -213,10 +261,10 @@ final class DivoomDaemon {
                     guard let packets = req.packets else {
                         throw NSError(domain: "DivoomDaemon", code: 5, userInfo: [NSLocalizedDescriptionKey: "Missing packets path"])
                     }
-                    let resp = try self.sendJob(packetPath: packets, delay: req.delay ?? 0.012, dryRun: req.dryRun ?? false)
+                    let resp = try self.sendJob(packetPath: packets, delay: req.delay ?? 0.012, dryRun: req.dryRun ?? false, waitForReply: req.waitForReply)
                     self.reply(conn, resp)
                 } catch {
-                    self.reply(conn, JobResponse(ok: false, message: String(describing: error), packets: nil, bytes: nil, sawRequest: nil, sawAck: nil))
+                    self.reply(conn, JobResponse(ok: false, message: String(describing: error), packets: nil, bytes: nil, sawRequest: nil, sawAck: nil, reply: nil))
                 }
             }
         }

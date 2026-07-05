@@ -19,9 +19,18 @@ NUM_CHANNELS = 8
 CHANNEL_NAMES = ["fan", "frogs", "fire", "waves", "rain", "river", "birdsong", "singingbowls"]
 
 
-def submit(host: str, port: int, packets_path: Path, delay: float = 0.012, dry_run: bool = False) -> dict:
+def submit(
+    host: str,
+    port: int,
+    packets_path: Path,
+    delay: float = 0.012,
+    dry_run: bool = False,
+    wait_for_reply: float = 0,
+) -> dict:
     req = {"packets": str(packets_path.resolve()), "delay": delay, "dryRun": dry_run}
-    with socket.create_connection((host, port), timeout=10) as s:
+    if wait_for_reply:
+        req["waitForReply"] = wait_for_reply
+    with socket.create_connection((host, port), timeout=10 + wait_for_reply) as s:
         s.sendall(json.dumps(req).encode() + b"\n")
         s.shutdown(socket.SHUT_WR)
         chunks = []
@@ -129,8 +138,11 @@ def main() -> int:
 
     if args.build_only:
         return 0
-    resp = submit(args.host, args.port, out_path, dry_run=args.daemon_dry_run)
+    wait_for_reply = 1.5 if args.action == "get" else 0
+    resp = submit(args.host, args.port, out_path, dry_run=args.daemon_dry_run, wait_for_reply=wait_for_reply)
     print("daemon:", json.dumps(resp, ensure_ascii=False))
+    if args.action == "get" and resp.get("reply"):
+        print("device state:", resp["reply"])
     return 0 if resp.get("ok") else 2
 
 

@@ -162,19 +162,101 @@ final class WhiteNoiseModel: ObservableObject {
     @Published var volumes: [Int] = Array(repeating: 0, count: WhiteNoiseModel.channelNames.count)
     @Published var status: String = "Off"
     @Published var isBusy: Bool = false
+    var isEditingSlider: Bool = false
+    private var autoRefreshTimer: Timer?
 
     init(app: DivoomMenuBar) {
         self.app = app
     }
 
+    // Only runs while the White Noise screen is actually visible (started/
+    // stopped from its onAppear/onDisappear) so a physical button press on
+    // the device itself is still noticed without polling in the background
+    // the rest of the time.
+    func startAutoRefresh() {
+        stopAutoRefresh()
+        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            guard let self, !self.isBusy, !self.isEditingSlider else { return }
+            self.refresh()
+        }
+    }
+
+    func stopAutoRefresh() {
+        autoRefreshTimer?.invalidate()
+        autoRefreshTimer = nil
+    }
+
+    // Both mutations re-fetch the device's actual current state first and
+    // apply the one change on top of *that*, instead of the in-memory
+    // `volumes`/`isOn` this model last knew about. Without this, editing one
+    // channel after the device changed underneath us (official app, or a
+    // prior app session) would silently clobber every other channel back to
+    // whatever this model last happened to hold.
     func setOn(_ on: Bool) {
-        isOn = on
-        send()
+        refresh { [weak self] in
+            guard let self else { return }
+            self.isOn = on
+            self.send()
+        }
     }
 
     func sliderChanged(index: Int, value: Int) {
-        volumes[index] = value
-        send()
+        refresh { [weak self] in
+            guard let self else { return }
+            self.volumes[index] = value
+            self.send()
+        }
+    }
+
+    /// Queries the device's actual current state via WhiteNoise/Get instead
+    /// of assuming whatever this model last set — the device may have been
+    /// changed by the official app, or still be playing from a prior app
+    /// session that no longer has this model in memory. Also called on its
+    /// own from a manual "Refresh" button, since there's no push/polling —
+    /// the UI only reflects the device's state as of the last query.
+    func refresh(completion: (() -> Void)? = nil) {
+        isBusy = true
+        status = "Checking device state…"
+        let job: [String: Any] = [
+            "Command": "WhiteNoise/Get",
+            "DeviceId": 600111083,
+            "DevicePassword": 1777733348,
+            "Token": 1777741943,
+            "UserId": 404779143,
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: job) else {
+            isBusy = false
+            status = "JSON encode error"
+            completion?()
+            return
+        }
+        let packet = DivoomRawFrame.build(cmd: 0x01, body: body)
+        let path = DivoomRawFrame.writePacketsFile(packet, name: "whitenoise-get", in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583, waitForReply: 1.5) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                guard
+                    let outerData = result.data(using: .utf8),
+                    let outer = try? JSONSerialization.jsonObject(with: outerData) as? [String: Any],
+                    let replyText = outer["reply"] as? String,
+                    let replyData = replyText.data(using: .utf8),
+                    let state = try? JSONSerialization.jsonObject(with: replyData) as? [String: Any]
+                else {
+                    self.status = "Couldn't read device state; showing last-known values."
+                    completion?()
+                    return
+                }
+                if let onOff = state["OnOff"] as? Int {
+                    self.isOn = onOff != 0
+                }
+                if let volumeArray = state["Volume"] as? [Int], volumeArray.count == self.volumes.count {
+                    self.volumes = volumeArray
+                }
+                self.status = self.isOn ? "Playing" : "Off"
+                completion?()
+            }
+        }
     }
 
     func send() {
@@ -214,10 +296,21 @@ struct WhiteNoiseView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Toggle(isOn: Binding(get: { model.isOn }, set: { model.setOn($0) })) {
-                Text("White Noise").font(.headline)
+            HStack {
+                Toggle(isOn: Binding(get: { model.isOn }, set: { model.setOn($0) })) {
+                    Text("White Noise").font(.headline)
+                }
+                .toggleStyle(.switch)
+                Spacer()
+                Button(action: { model.refresh() }) {
+                    Label("Check Current State", systemImage: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.accentColor)
+                .disabled(model.isBusy)
+                .help("Re-check the device's actual current state — this screen doesn't update live if something else changes it.")
             }
-            .toggleStyle(.switch)
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(WhiteNoiseModel.channelNames.enumerated()), id: \.offset) { index, name in
@@ -231,6 +324,7 @@ struct WhiteNoiseView: View {
                             ),
                             in: 0...100,
                             onEditingChanged: { editing in
+                                model.isEditingSlider = editing
                                 if !editing { model.sliderChanged(index: index, value: model.volumes[index]) }
                             }
                         )
@@ -251,7 +345,14 @@ struct WhiteNoiseView: View {
             }
         }
         .padding(20)
-        .onAppear { model.app.resizeControlCenterWindow(to: NSSize(width: 420, height: 400)) }
+        .onAppear {
+            model.app.resizeControlCenterWindow(to: NSSize(width: 420, height: 400))
+            model.refresh()
+            model.startAutoRefresh()
+        }
+        .onDisappear {
+            model.stopAutoRefresh()
+        }
     }
 }
 
@@ -411,6 +512,13 @@ extension DivoomMenuBar {
             // never feel cramped, even when showing the small icon grid.
             window.contentMinSize = NSSize(width: 320, height: 150)
             controlCenterWindow = window
+            // SwiftUI's onDisappear doesn't fire just from closing this window
+            // (isReleasedWhenClosed=false keeps the view alive so the window
+            // can be reused) — without this, closing the window while White
+            // Noise's auto-refresh is running leaves it polling forever.
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                self?.whiteNoiseModel?.stopAutoRefresh()
+            }
         }
         if isNewWindow {
             controlCenterWindow?.setContentSize(NSSize(width: 280, height: 160))
