@@ -41,8 +41,8 @@ final class RFCOMMDelegate: NSObject, IOBluetoothRFCOMMChannelDelegate {
         lock.lock()
         rx.append(d)
         lock.unlock()
-        let hex = d.prefix(80).map { String(format: "%02x", $0) }.joined(separator: " ")
-        print("rx \(dataLength): \(hex)\(d.count > 80 ? " ..." : "")")
+        let hex = d.prefix(2048).map { String(format: "%02x", $0) }.joined(separator: " ")
+        print("rx \(dataLength): \(hex)\(d.count > 2048 ? " ..." : "")")
         fflush(stdout)
     }
 
