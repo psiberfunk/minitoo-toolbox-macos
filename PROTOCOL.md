@@ -516,6 +516,10 @@ Current UX notes:
 - The menu refreshes when opened, so daemon/audio status should reflect current state.
 - The app avoids modal success/error popups; status appears as the `Last:` line in the menu.
 - The packaged `.app` can be copied into `/Applications`; opening it is enough to disconnect audio once and start the daemon.
+- Signed with any available codesigning identity (not ad-hoc) so macOS
+  Bluetooth permission persists across rebuilds instead of re-prompting
+  every time — ad-hoc signing has no Team ID, so TCC keys the grant off the
+  binary's hash, which changes on every recompile.
 
 ## Custom face selection
 
