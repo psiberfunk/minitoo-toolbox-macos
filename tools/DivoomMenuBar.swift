@@ -146,8 +146,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
            kill(pid, 0) == 0 {
             return true
         }
-        let daemonPath = toolRoot.appendingPathComponent("divoom-daemon").path.replacingOccurrences(of: "'", with: "'\\''")
-        let (code, _) = run("/bin/sh", ["-lc", "pgrep -f '\(daemonPath)' >/dev/null || pgrep -f 'divoom-daemon' >/dev/null"], wait: true)
+        let (code, _) = run("/usr/bin/pgrep", ["-x", "divoom-daemon"], wait: true)
         return code == 0
     }
 
@@ -324,7 +323,9 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func appendLog(_ line: String) {
         let ts = ISO8601DateFormatter().string(from: Date())
         let text = "[\(ts)] \(line)\n"
-        FileManager.default.createFile(atPath: menuLog.path, contents: nil)
+        if !FileManager.default.fileExists(atPath: menuLog.path) {
+            FileManager.default.createFile(atPath: menuLog.path, contents: nil)
+        }
         if let h = try? FileHandle(forWritingTo: menuLog) {
             h.seekToEndOfFile()
             h.write(Data(text.utf8))
