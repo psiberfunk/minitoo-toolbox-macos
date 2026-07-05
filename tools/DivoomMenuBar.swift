@@ -9,6 +9,8 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let supportDir: URL
     var daemonProcess: Process?
     var statusItemViewTimer: Timer?
+    var controlCenterWindow: NSWindow?
+    var controlCenterModel: ControlCenterModel?
     var lastMessage = "Ready"
 
     let address = "B1:21:81:B1:F0:84"
@@ -70,7 +72,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(disabled("Audio profile: \(audioConnected ? "Connected" : "Disconnected")"))
         menu.addItem(disabled("Last: \(shortStatus(lastMessage))"))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(item("Send Image/GIF/Video…", #selector(sendImage), enabled: daemonRunning))
+        menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
         menu.addItem(item("Activate Custom Face 1", #selector(activateCustomFace1), enabled: daemonRunning))
         menu.addItem(item("Activate Custom Face 2", #selector(activateCustomFace2), enabled: daemonRunning))
         menu.addItem(NSMenuItem.separator())
@@ -107,6 +109,11 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let singleLine = message.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
         if singleLine.count <= limit { return singleLine }
         return String(singleLine.prefix(limit - 1)) + "…"
+    }
+
+    func pythonExecutable() -> String {
+        let venvPy = repo.appendingPathComponent(".venv/bin/python").path
+        return FileManager.default.isExecutableFile(atPath: venvPy) ? venvPy : (executablePath("python3") ?? "/usr/bin/python3")
     }
 
     func executablePath(_ name: String) -> String? {
@@ -255,35 +262,13 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc func sendImage() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.png, .jpeg, .gif, .image, .movie]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            if !self.isDaemonRunning() {
-                self.setStatus("Daemon not running")
-                return
-            }
-            let venvPy = self.repo.appendingPathComponent(".venv/bin/python").path
-            let py = FileManager.default.isExecutableFile(atPath: venvPy) ? venvPy : (self.executablePath("python3") ?? "/usr/bin/python3")
-            let client = self.toolRoot.appendingPathComponent("divoom_send.py").path
-            let (code, out) = self.run(py, [client, url.path, "--out-dir", self.capturesDir.path])
-            let detail = String(out.suffix(900))
-            self.setStatus(code == 0 ? "Media sent" : "Send issue: \(detail)")
-        }
-    }
-
     func activateClock(_ shortcut: String) {
         DispatchQueue.global(qos: .userInitiated).async {
             if !self.isDaemonRunning() {
                 self.setStatus("Daemon not running")
                 return
             }
-            let venvPy = self.repo.appendingPathComponent(".venv/bin/python").path
-            let py = FileManager.default.isExecutableFile(atPath: venvPy) ? venvPy : (self.executablePath("python3") ?? "/usr/bin/python3")
+            let py = self.pythonExecutable()
             let client = self.toolRoot.appendingPathComponent("divoom_clock.py").path
             let (code, out) = self.run(py, [client, shortcut])
             let detail = String(out.suffix(700))
@@ -333,7 +318,12 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-let app = NSApplication.shared
-let delegate = DivoomMenuBar()
-app.delegate = delegate
-app.run()
+@main
+enum DivoomMenuBarMain {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = DivoomMenuBar()
+        app.delegate = delegate
+        app.run()
+    }
+}
