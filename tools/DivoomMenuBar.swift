@@ -87,6 +87,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var controlCenterModel: ControlCenterModel?
     var whiteNoiseModel: WhiteNoiseModel?
     var customFacesModel: CustomFacesModel?
+    var deviceControlsModel: DeviceControlsModel?
     var lastMessage = "Ready"
     var lastBrightness: Int = 100
 
@@ -117,8 +118,38 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         try? fm.createDirectory(at: capturesDir, withIntermediateDirectories: true)
     }
 
+    // Persisted separately from Info.plist's LSUIElement (which only sets
+    // the policy at first launch) — NSApp.setActivationPolicy can be changed
+    // at any time afterward, which is what lets this be a live user toggle
+    // instead of a build-time/Info.plist setting.
+    var showDockIcon: Bool {
+        get { UserDefaults.standard.bool(forKey: "ShowDockIcon") }
+        set { UserDefaults.standard.set(newValue, forKey: "ShowDockIcon") }
+    }
+
+    func applyDockIconPolicy() {
+        NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
+    }
+
+    @objc func toggleShowDockIcon() {
+        showDockIcon.toggle()
+        applyDockIconPolicy()
+        rebuildMenu()
+    }
+
+    // Standard Dock-icon-click hook: if the user shows the Dock icon and
+    // clicks it with no window open, open Control Center instead of doing
+    // nothing (a regular-policy app with zero windows looks broken
+    // otherwise).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows {
+            openControlCenter()
+        }
+        return true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        applyDockIconPolicy()
         appendLog("menubar started repo=\(repo.path)")
         statusItem.button?.title = "◈ Divoom"
         menu.delegate = self
@@ -159,9 +190,6 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(disabled("Last: \(shortStatus(lastMessage))"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
-        menu.addItem(brightnessSliderItem(enabled: daemonRunning))
-        menu.addItem(item("Screen On", #selector(screenOnMenu), enabled: daemonRunning))
-        menu.addItem(item("Screen Off", #selector(screenOffMenu), enabled: daemonRunning))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Start Daemon (only if audio disconnected)", #selector(startDaemonMenu), enabled: !daemonRunning && !audioConnected))
         menu.addItem(item("Disconnect Audio + Start Daemon", #selector(disconnectAndStartMenu), enabled: !daemonRunning))
@@ -183,6 +211,12 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         submenu.addItem(item("Open Protocol Notes", #selector(openProtocol)))
         submenu.addItem(item("Open Menu Log", #selector(openMenuLog)))
         submenu.addItem(item("Open Daemon Log", #selector(openDaemonLog)))
+        submenu.addItem(NSMenuItem.separator())
+        // Dock icon is off by default (this is a menu-bar utility), but
+        // showing it makes the app discoverable to tools that only see
+        // regular foreground apps (e.g. UI-automation tooling), and clicking
+        // the Dock icon opens Control Center if nothing's open.
+        submenu.addItem(checkboxItem("Show Dock Icon", #selector(toggleShowDockIcon), checked: showDockIcon))
         parent.submenu = submenu
         return parent
     }
@@ -191,6 +225,12 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let i = NSMenuItem(title: title, action: action, keyEquivalent: "")
         i.target = self
         i.isEnabled = enabled
+        return i
+    }
+
+    func checkboxItem(_ title: String, _ action: Selector, checked: Bool) -> NSMenuItem {
+        let i = item(title, action)
+        i.state = checked ? .on : .off
         return i
     }
 
@@ -393,33 +433,6 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.setStatus(hardFailure ? "Screen issue: \(result)" : "Screen \(on ? "on" : "off")")
             }
         }
-    }
-
-    @objc func screenOnMenu() { setScreen(on: true) }
-    @objc func screenOffMenu() { setScreen(on: false) }
-
-    func brightnessSliderItem(enabled: Bool) -> NSMenuItem {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 34))
-
-        let label = NSTextField(labelWithString: "Brightness")
-        label.frame = NSRect(x: 14, y: 8, width: 74, height: 18)
-        label.font = NSFont.menuFont(ofSize: 0)
-        label.isEnabled = enabled
-        container.addSubview(label)
-
-        let slider = NSSlider(value: Double(lastBrightness), minValue: 0, maxValue: 100, target: self, action: #selector(brightnessSliderChanged(_:)))
-        slider.frame = NSRect(x: 92, y: 6, width: 116, height: 20)
-        slider.isContinuous = false
-        slider.isEnabled = enabled
-        container.addSubview(slider)
-
-        let menuItem = NSMenuItem()
-        menuItem.view = container
-        return menuItem
-    }
-
-    @objc func brightnessSliderChanged(_ sender: NSSlider) {
-        setBrightness(Int(sender.intValue))
     }
 
     func setBrightness(_ level: Int) {
