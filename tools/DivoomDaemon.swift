@@ -86,9 +86,9 @@ final class DivoomDaemon {
         self.address = address
         self.channelID = BluetoothRFCOMMChannelID(channelID)
         self.port = port
-        // Belt-and-suspenders alongside sendPacket's write timeout below: if
-        // IOBluetooth does deliver a close notification, react immediately
-        // instead of waiting to discover it via a stale isOpen()/hung write.
+        // If IOBluetooth does deliver a close notification, react immediately
+        // instead of leaving a stale rfcomm reference around for isOpen() to
+        // (possibly incorrectly) report as still open.
         delegate.onClosed = { [weak self] in self?.rfcomm = nil }
     }
 
