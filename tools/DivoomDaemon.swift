@@ -20,6 +20,7 @@ struct JobRequest: Codable {
 final class RFCOMMDelegate: NSObject, IOBluetoothRFCOMMChannelDelegate {
     private let lock = NSLock()
     private var rx = Data()
+    var onClosed: (() -> Void)?
 
     func resetRx() {
         lock.lock(); defer { lock.unlock() }
@@ -54,6 +55,7 @@ final class RFCOMMDelegate: NSObject, IOBluetoothRFCOMMChannelDelegate {
     func rfcommChannelClosed(_ rfcommChannel: IOBluetoothRFCOMMChannel!) {
         print("rfcomm closed")
         fflush(stdout)
+        onClosed?()
     }
 
     func rfcommChannelWriteComplete(_ rfcommChannel: IOBluetoothRFCOMMChannel!, refcon: UnsafeMutableRawPointer!, status error: IOReturn, bytesWritten length: Int) {
@@ -82,6 +84,10 @@ final class DivoomDaemon {
         self.address = address
         self.channelID = BluetoothRFCOMMChannelID(channelID)
         self.port = port
+        // Belt-and-suspenders alongside sendPacket's write timeout below: if
+        // IOBluetooth does deliver a close notification, react immediately
+        // instead of waiting to discover it via a stale isOpen()/hung write.
+        delegate.onClosed = { [weak self] in self?.rfcomm = nil }
     }
 
     func openRFCOMM() throws {
@@ -135,8 +141,26 @@ final class DivoomDaemon {
         }
         var d = pkt
         let len = UInt16(d.count)
-        let ret = d.withUnsafeMutableBytes { ptr in
-            ch.writeSync(ptr.baseAddress, length: len)
+        // writeSync blocks on IOBluetooth's stack with no built-in timeout,
+        // and isOpen() has been observed to keep reporting true against a
+        // channel whose underlying link already dropped — so a stale channel
+        // can hang this call indefinitely, wedging the whole daemon (see
+        // PROTOCOL.md's daemon robustness notes). Run it on its own thread
+        // and give it a hard deadline instead of trusting isOpen().
+        let sem = DispatchSemaphore(value: 0)
+        var ret: IOReturn = kIOReturnError
+        DispatchQueue(label: "divoom.write").async {
+            ret = d.withUnsafeMutableBytes { ptr in
+                ch.writeSync(ptr.baseAddress, length: len)
+            }
+            sem.signal()
+        }
+        guard sem.wait(timeout: .now() + 2.0) == .success else {
+            // Force the next send to reopen rather than reuse this channel —
+            // the abandoned writeSync call may still complete later, but we
+            // no longer wait on or trust it.
+            rfcomm = nil
+            throw NSError(domain: "DivoomDaemon", code: 99, userInfo: [NSLocalizedDescriptionKey: "RFCOMM write timed out after 2s, channel appears stale — will reopen on next send"])
         }
         guard ret == kIOReturnSuccess else {
             throw NSError(domain: "DivoomDaemon", code: Int(ret), userInfo: [NSLocalizedDescriptionKey: "RFCOMM write failed ret=0x\(String(ret, radix: 16))"])
