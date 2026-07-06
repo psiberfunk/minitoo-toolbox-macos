@@ -769,6 +769,56 @@ final class AtmosphereModel: ObservableObject {
         return DivoomRawFrame.build(cmd: 0x01, body: body)
     }
 
+    private func getConfigPacket() -> Data {
+        let job: [String: Any] = [
+            "Command": "Lyric/GetConfig",
+            "DeviceId": 600111083,
+            "Token": 1777741943,
+            "UserId": 404779143,
+        ]
+        let body = (try? JSONSerialization.data(withJSONObject: job)) ?? Data()
+        return DivoomRawFrame.build(cmd: 0x01, body: body)
+    }
+
+    // Lyric/GetConfig does get a real reply -- {"Command":"Lyric/GetConfig",
+    // "Background":N,"TextEffect":N} -- confirmed via a fresh BT capture
+    // read; an earlier pass mistakenly concluded there was no reply because
+    // it only checked the same L2CAP CID the outgoing command used, not the
+    // (different) CID the device's reply arrived on.
+    func refresh() {
+        isBusy = true
+        status = "Checking device state…"
+        let port = UInt16(app.daemonPort) ?? 40583
+        let enterPath = DivoomRawFrame.writePacketsFile(enterPacket(), name: "atmosphere-enter", in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: enterPath, port: port) { [weak self] _ in
+            guard let self else { return }
+            let getPath = DivoomRawFrame.writePacketsFile(self.getConfigPacket(), name: "atmosphere-getconfig", in: self.app.capturesDir)
+            DivoomRawFrame.submit(packetsPath: getPath, port: port, waitForReply: 1.5) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.isBusy = false
+                    guard
+                        let outerData = result.data(using: .utf8),
+                        let outer = try? JSONSerialization.jsonObject(with: outerData) as? [String: Any],
+                        let replyText = outer["reply"] as? String,
+                        let replyData = replyText.data(using: .utf8),
+                        let state = try? JSONSerialization.jsonObject(with: replyData) as? [String: Any]
+                    else {
+                        self.status = "Couldn't read device state; showing last-known values."
+                        return
+                    }
+                    if let background = state["Background"] as? Int {
+                        self.selectedBackground = background
+                    }
+                    if let textEffect = state["TextEffect"] as? Int {
+                        self.selectedTextEffect = textEffect
+                    }
+                    self.status = "Background \(self.selectedBackground), effect \(Self.textEffectNames[self.selectedTextEffect])."
+                }
+            }
+        }
+    }
+
     func selectBackground(_ index: Int) {
         selectedBackground = index
         apply()
@@ -814,7 +864,17 @@ struct AtmosphereView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Atmosphere").font(.headline)
+            HStack {
+                Text("Atmosphere").font(.headline)
+                Spacer()
+                Button(action: { model.refresh() }) {
+                    Label("Check Current State", systemImage: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.accentColor)
+                .disabled(model.isBusy)
+            }
 
             Text("Background").font(.subheadline)
             LazyVGrid(columns: backgroundColumns, spacing: 6) {
@@ -856,6 +916,7 @@ struct AtmosphereView: View {
             }
         }
         .padding(20)
+        .onAppear { model.refresh() }
     }
 }
 
