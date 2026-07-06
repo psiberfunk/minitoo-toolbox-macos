@@ -88,6 +88,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var whiteNoiseModel: WhiteNoiseModel?
     var customFacesModel: CustomFacesModel?
     var deviceControlsModel: DeviceControlsModel?
+    var photoAlbumModel: PhotoAlbumModel?
     var preferencesWindow: NSWindow?
     var preferencesModel: PreferencesModel?
     let batteryMonitor = BatteryMonitorModel()

@@ -505,6 +505,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
     case sendMedia
     case whiteNoise
     case customFaces
+    case photoAlbum
 
     var id: String { rawValue }
 
@@ -513,6 +514,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
         case .sendMedia: return "Send Media"
         case .whiteNoise: return "White Noise"
         case .customFaces: return "Custom Faces"
+        case .photoAlbum: return "Photo Album"
         }
     }
 
@@ -521,6 +523,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
         case .sendMedia: return "photo"
         case .whiteNoise: return "waveform"
         case .customFaces: return "square.stack.3d.up"
+        case .photoAlbum: return "photo.stack"
         }
     }
 }
@@ -576,12 +579,153 @@ struct CustomFacesView: View {
     }
 }
 
+/// Uploads a photo into the MiniToo's persistent, single flat photo
+/// gallery -- architecturally distinct from Send Media's live/ephemeral
+/// 0x8b push (nothing here survives without this: this data is stored on
+/// the device itself and persists across reboots/disconnects). Talks to
+/// tools/divoom_album.py, same subprocess-and-parse-stdout pattern as
+/// ControlCenterModel.
+final class PhotoAlbumModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+    @Published var mediaURL: URL?
+    @Published var previewImage: NSImage?
+    @Published var summary: String = ""
+    @Published var status: String = "Choose a photo to add it to the device's photo album."
+    @Published var isBusy: Bool = false
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+    }
+
+    func chooseMedia() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        mediaURL = url
+        buildPreview(for: url)
+    }
+
+    func buildPreview(for url: URL) {
+        isBusy = true
+        status = "Building preview…"
+        previewImage = nil
+        summary = ""
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let py = self.app.pythonExecutable()
+            let script = self.app.toolRoot.appendingPathComponent("divoom_album.py").path
+            let (code, out) = self.app.run(py, ["--build-only", script, "--out-dir", self.app.capturesDir.path, "add-photo", url.path])
+            DispatchQueue.main.async {
+                self.isBusy = false
+                guard code == 0 else {
+                    self.status = "Build failed: \(String(out.suffix(500)))"
+                    return
+                }
+                var previewPath: String?
+                for line in out.split(separator: "\n", omittingEmptySubsequences: true) {
+                    let line = String(line)
+                    if line.hasPrefix("preview=") {
+                        previewPath = String(line.dropFirst("preview=".count))
+                    } else if line.hasPrefix("jpeg=") {
+                        self.summary = line
+                    }
+                }
+                if let previewPath {
+                    self.previewImage = NSImage(contentsOfFile: previewPath)
+                }
+                self.status = self.previewImage != nil
+                    ? "Preview ready — review it, then add to the album."
+                    : "Build finished but couldn't parse the preview path."
+            }
+        }
+    }
+
+    func send() {
+        guard let mediaURL else { return }
+        guard app.isDaemonRunning() else {
+            status = "Daemon not running — start it from the menu first."
+            return
+        }
+        isBusy = true
+        status = "Adding to photo album…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let py = self.app.pythonExecutable()
+            let script = self.app.toolRoot.appendingPathComponent("divoom_album.py").path
+            let (code, out) = self.app.run(py, [script, "--out-dir", self.app.capturesDir.path, "add-photo", mediaURL.path])
+            DispatchQueue.main.async {
+                self.isBusy = false
+                self.status = code == 0 ? "Added to photo album." : "Issue: \(String(out.suffix(500)))"
+            }
+        }
+    }
+}
+
+struct PhotoAlbumView: View {
+    @ObservedObject var model: PhotoAlbumModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Photo Album").font(.headline)
+            Text("Adds a photo to the device's own persistent photo gallery — it stays there across reboots, unlike Send Media's live preview.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack(alignment: .top, spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8).fill(Color.gray.opacity(0.15))
+                    if let image = model.previewImage {
+                        Image(nsImage: image)
+                            .interpolation(.none)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .padding(6)
+                    } else {
+                        Text("No preview yet").foregroundColor(.secondary).font(.callout)
+                    }
+                }
+                .frame(width: 220, height: 176)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Button("Choose Photo…") { model.chooseMedia() }
+                    if let url = model.mediaURL {
+                        Text(url.lastPathComponent)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    if !model.summary.isEmpty {
+                        Text(model.summary).font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button("Add to Album") { model.send() }
+                        .disabled(model.previewImage == nil || model.isBusy)
+                }
+                .frame(width: 200, alignment: .leading)
+            }
+
+            HStack(spacing: 8) {
+                if model.isBusy {
+                    ProgressView().controlSize(.small)
+                }
+                Text(model.status).font(.caption).foregroundColor(.secondary)
+            }
+        }
+        .padding(20)
+    }
+}
+
 struct ControlCenterView: View {
     @ObservedObject var sendModel: ControlCenterModel
     @ObservedObject var whiteNoiseModel: WhiteNoiseModel
     @ObservedObject var customFacesModel: CustomFacesModel
     @ObservedObject var deviceControlsModel: DeviceControlsModel
     @ObservedObject var batteryMonitor: BatteryMonitorModel
+    @ObservedObject var photoAlbumModel: PhotoAlbumModel
     @State private var selection: ControlCenterFunction?
 
     var body: some View {
@@ -650,6 +794,7 @@ struct ControlCenterView: View {
         case .sendMedia: SendMediaView(model: sendModel)
         case .whiteNoise: WhiteNoiseView(model: whiteNoiseModel)
         case .customFaces: CustomFacesView(model: customFacesModel)
+        case .photoAlbum: PhotoAlbumView(model: photoAlbumModel)
         }
     }
 }
@@ -667,7 +812,9 @@ extension DivoomMenuBar {
             self.customFacesModel = customFacesModel
             let deviceControlsModel = DeviceControlsModel(app: self)
             self.deviceControlsModel = deviceControlsModel
-            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor))
+            let photoAlbumModel = PhotoAlbumModel(app: self)
+            self.photoAlbumModel = photoAlbumModel
+            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor, photoAlbumModel: photoAlbumModel))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Divoom Control Center"
             window.styleMask = [.titled, .closable, .miniaturizable]

@@ -542,6 +542,10 @@ Menu actions:
       re-fetches real device state first and applies the one change on top
       of it, so it can't clobber other channels back to stale local values.
     - **Custom Faces** — buttons to activate custom face 1/2/3.
+    - **Photo Album** — choose a photo, preview, "Add to Album" — uploads
+      into the device's *persistent* on-device photo gallery (see "Photo
+      Album" section below), distinct from Send Media's live/ephemeral
+      push. No album/ID selection needed; the device has one flat gallery.
   - Each screen resizes the window to its own actual measured content size
     (a `GeometryReader`-based mechanism, not hand-picked constants).
 - Brightness slider
@@ -833,3 +837,96 @@ CLI:
 
 The menu bar app exposes all 8 channels as independent sliders (mixable),
 plus an "Off (all channels)" reset, under White Noise.
+
+## Photo Album (persistent on-device photo storage)
+
+Architecturally distinct from the "Photo / animation command" section
+above (`0x8b`, `SPP_APP_NEW_GIF_CMD2020`): that path is a live, ephemeral
+pixel push (nothing survives reboot/disconnect, requires the daemon
+running every time). This section is the official app's actual **persistent**
+photo storage — upload once, it stays on the device across reboots,
+displayed in a single flat gallery (no albums/IDs — the device really only
+has one gallery, confirmed both by direct observation and by the capture
+below finding no album-selection step of any kind).
+
+**Provenance:** this protocol was decoded from a real Bluetooth HCI snoop
+capture of the official Divoom Android app performing this exact action
+against a real MiniToo — not from decompiled APK source, which traced a
+different, apparently-unused code path (`BluePhotoModel`'s JSON
+album-management + a 12-byte photo header + eZip encoding) that produced
+three wrong theories in a row and two real device crashes before the real
+capture resolved it in one shot. See `tools/divoom_album.py`'s module
+docstring and this repo's development history for the full story if it
+matters later.
+
+### Protocol
+
+1. `{"Command":"Photo/Enter","DeviceId":<id>,"Token":<token>,"UserId":<id>}`
+   — plain JSON over `SPP_JSON` (`0x01`). This is the **only** JSON command
+   involved — no `Photo/NewAlbum`, `Photo/LocalAddToAlbum`, or
+   `Photo/PlayAlbum`, and no `ClockId`/album addressing at all.
+2. `SPP_LOCAL_PICTURE` (`0x8F`) binary transfer of a small custom "blob":
+   - **Announce**: a 5-byte body, `[0x00][blob_size_u32_LE]`. Notably
+     *not* the more complex 12-byte header (marker + size + photoFlag +
+     fileType + totalCount + fileIndex) that a decompiled-code trace of
+     `BluePhotoModel.n()` suggested — sending that longer header format
+     crashed the device.
+   - **Chunks**: `[0x01][blob_size_u32_LE][chunk_index_u16_LE][<=256B payload]`
+     — same shape as the `0x8b` chunk format elsewhere in this doc.
+3. **The blob itself** (what gets chunked) has its own small header,
+   distinct from the `0x25`-marker header used by the `0x8b` live-draw
+   path:
+
+   ```text
+   1f                  marker (unique to this feature; 0x25 is the 0x8b one)
+   01                  frame count (always 1 in the capture; multi-frame untested)
+   <speed_be16>        milliseconds, big-endian (2000 in the capture)
+   <row_blocks_u8>     16px blocks; 8 = 128px
+   <col_blocks_u8>     16px blocks; 10 = 160px (full panel width)
+   <jpeg_len_be32>      big-endian length of the JPEG that follows
+   <jpeg_bytes>        a plain, standard JPEG -- NOT WebP, NOT eZip
+   ```
+
+   The JPEG is a real JFIF file with an embedded ICC color profile, exactly
+   what Android's own `Bitmap.compress(JPEG, ...)` produces — nothing
+   Divoom-specific about the image encoding itself, only the small
+   `0x1f`-marker wrapper header around it.
+
+### Implementation
+
+`tools/divoom_album.py add-photo <image>` — cover-crops/resizes to the full
+160x128 panel, JPEG-encodes (quality 90 default), wraps in the blob header,
+and uploads. Exposed in the menu-bar app's Control Center as a "Photo
+Album" screen (choose a photo, preview, "Add to Album") — hardware-tested
+end-to-end: an uploaded test image appeared correctly and persistently in
+the gallery alongside a real photo added moments earlier via the official
+Android app in the same session.
+
+### How the capture was obtained
+
+Useful to remember if a similar investigation is needed again — see also
+the standing project preference for this technique over APK tracing.
+
+1. Android tablet, official Divoom app, paired with the MiniToo through the
+   app's own in-app "add device" flow (system-level Bluetooth pairing alone
+   only connects the generic audio profile — volume works, JSON commands
+   don't, mirroring this project's own daemon needing to disconnect audio
+   before opening the RFCOMM control channel).
+2. Developer Options → "Enable Bluetooth HCI snoop log".
+3. Perform the real action once in the official app.
+4. `adb bugreport out.zip` — on modern Android the raw log isn't directly
+   readable from `/sdcard`; it's bundled inside the bug report zip at
+   `FS/data/misc/bluetooth/logs/*.cfa.curf`. Despite the unusual extension,
+   it's the standard `btsnoop` file format (confirmed via its `btsnoop\0`
+   magic header) and parses directly.
+5. Parse: HCI ACL header (`<HH` handle+flags, `<HH` L2CAP length+CID) →
+   L2CAP payload → RFCOMM header (address byte's DLCI, control byte, 1-or-2
+   byte length depending on the length byte's EA bit — **watch for an
+   extra credit byte** inserted right after the length field whenever the
+   control byte's P/F bit is set, i.e. `control & 0x10`, from RFCOMM's
+   credit-based flow control extension) → the actual SPP payload, which
+   uses this project's already-documented `01 <len_le16> <cmd> <body>
+   <checksum_le16> 02` framing.
+6. The MiniToo's Bluetooth link is fragile to multiple nearby devices
+   competing for it — keep every other device's Bluetooth off during the
+   capture session.
