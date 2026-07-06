@@ -40,10 +40,11 @@ deliberate, separate step, not bundled into unrelated work.
 - **Panel is 160×128, not 128×128** — confirmed via hardware test with an
   asymmetric block header; square sends are left-justified from the
   top-left, not centered/letterboxed. → PROTOCOL.md.
-- **Photo Album crash trigger**: sending WebP/JPEG bytes at `fileType=1`
-  reboots the device — the real required format is SiFli eZip, not
-  WebP/JPEG (the `.webp` filename string in the app is cosmetic only). →
-  PROTOCOL.md, next to the existing opcode-brick warnings.
+- **Photo Album crash was from a discarded theory, not the real format**:
+  an early decompiled-code guess (12-byte header + SiFli eZip) crashed the
+  device twice; the real, capture-verified format is a 5-byte announce +
+  plain JFIF JPEG under a simpler blob header — already in PROTOCOL.md's
+  "Photo Album" section, nothing left to promote here.
 - **Device rename (`0x75`, `SPP_SET_DEVICE_NAME`)** has no PROTOCOL.md
   section yet: body = 1-byte length prefix + raw UTF-8 name bytes, same
   raw single-opcode frame as brightness; the device never replies to it. →

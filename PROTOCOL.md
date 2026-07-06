@@ -470,6 +470,7 @@ Important operational note:
 - The daemon may need a one-time audio-profile disconnect before it can open RFCOMM channel `1`.
 - Once the daemon holds the RFCOMM channel open, subsequent image sends should not require repeated disconnect/reconnect.
 - In testing, daemon jobs sometimes reported `sent but final ACK not observed` while the device still updated correctly. Treat this as a daemon callback/ACK-observation issue, not necessarily a send failure.
+- `IOBluetoothRFCOMMChannel` writes must happen on the same thread that opened the channel — a background-thread `writeSync` call reports success while sending nothing on the wire. This is what the daemon's write-timeout handling guards against.
 
 ## Menu-bar controller
 
@@ -663,6 +664,28 @@ CLI:
 .venv/bin/python tools/divoom_clock.py 984
 ```
 
+### Populating the empty custom-face slots: known dead ends
+
+All 3 custom-face slots (`ClockId` 984/986/988) are currently empty on this
+device — selection works, but how the official app actually populates a
+slot with a custom animation/image is still unknown. From bugzmanov's
+`FINDINGS.md` cross-reference, these paths have already been tried and
+confirmed **not** to be it, to save re-treading them in a future capture
+session:
+
+- **`0xBE`, fake-`FileId` custom-face emulation** — re-uploads the payload
+  on every single face switch instead of a real one-time persistent write;
+  not actually the "instant" on-device slot it should be.
+- **`0x8C`, stored-animation slots** — never produced any device response
+  at all.
+- **General photo/gallery upload** (the `0x8F` path documented under
+  "Photo Album" below) — writes into the device's single shared gallery,
+  with no way to pin one image to a specific custom-face slot.
+
+Most likely path forward: a real Bluetooth HCI-snoop capture of the
+official app populating a slot, same method used to resolve Photo Album
+below.
+
 ## Display settings: brightness
 
 Reverse-engineered from the official Divoom Android app's `CmdManager.x2(byte)`,
@@ -681,6 +704,24 @@ CLI:
 ```bash
 .venv/bin/python tools/divoom_display.py brightness 100
 ```
+
+## Device rename
+
+Opcode `0x75` (`SPP_SET_DEVICE_NAME`), verified byte-for-byte against a
+real capture:
+
+```text
+cmd  = 0x75
+body = <name_len_u8><utf8_name_bytes...>
+```
+
+Same raw single-opcode frame shape as brightness (`0x74`) — no JSON
+involved, and the device never sends a reply to this command.
+
+**Known unresolved issue:** on-device persistence of a new name has been
+unreliable in testing — the name doesn't always stick across
+reconnect/reboot. Protocol framing is confirmed; the persistence gap is
+not. Parked pending further investigation.
 
 ## Explored, not applicable to MiniToo: "screen dir cfg" / rotation
 
