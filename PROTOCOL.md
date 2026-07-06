@@ -493,10 +493,13 @@ Menu-bar title:
 Menu actions:
 
 - `Open Control Center…`
-  - Opens a separate SwiftUI window (`tools/DivoomControlCenter.swift`) with
-    a home grid of function icons — matches the real Divoom app's own
-    navigation (tap an icon, drill into its controls, "Functions" back
-    button to return), rather than a tab bar. Screens:
+  - Opens a separate SwiftUI window (`tools/DivoomControlCenter.swift`)
+    with a persistent device-controls bar pinned at the top (screen
+    on/off toggle, brightness slider, and — once enabled in
+    Preferences — a battery icon/percentage), and below it a home grid
+    of function icons matching the real Divoom app's own navigation (tap
+    an icon, drill into its controls, "Functions" back button to
+    return), rather than a tab bar. Screens:
     - **Send Media** — choose a PNG/JPEG/GIF/video, builds and shows a
       preview (via `divoom_send.py --build-only`) before committing to the
       multi-second chunked upload, then "Send to Device".
@@ -510,13 +513,42 @@ Menu actions:
     - **Custom Faces** — buttons to activate custom face 1/2/3.
   - Each screen resizes the window to its own actual measured content size
     (a `GeometryReader`-based mechanism, not hand-picked constants).
-- Brightness slider (menu item, not in Control Center)
+- Brightness slider
+  - Shows both in the menu bar itself and in Control Center's
+    device-controls bar — dragging either updates the same underlying
+    state.
   - Native fast-path: builds `SPP_SET_SYSTEM_BRIGHT` (`0x74`) directly and
     talks to the daemon's TCP job socket, skipping Python/venv spin-up so
     dragging feels responsive.
-- `Screen On` / `Screen Off`
+- `Screen On` / `Screen Off` (Control Center device-controls bar only)
   - JSON `Channel/OnOffScreen`, native fast-path like brightness.
-  - Disabled while daemon is stopped.
+  - Dragging brightness to 0 turns the screen off automatically; raising
+    it back up turns it back on.
+- `Preferences…` (Cmd+,)
+  - Opens a small SwiftUI window (`tools/DivoomPreferences.swift`) with:
+    - **Show Dock Icon** — toggles `NSApp.setActivationPolicy` live
+      between `.accessory`/`.regular`; clicking the Dock icon with no
+      window open reopens Control Center.
+    - **Show Battery Status** (off by default) — this device has no
+      official battery command. When enabled, reads it one of two ways
+      (both explicitly labeled as unsupported/private, either could break
+      on a future macOS update):
+      - *Log parsing* (default once enabled) — parses `bluetoothd`'s own
+        diagnostic output (`log stream`) for its periodic `CBPowerSource`
+        line. `CBPowerSource` is a real class inside the public
+        `CoreBluetooth.framework` binary, but is completely undocumented
+        (absent from every CoreBluetooth header) and populated internally
+        by `bluetoothd` over a private XPC channel with no public entry
+        point — its log text is the only observable public artifact.
+      - *Private CoreUtils API* (experimental opt-in) — `dlopen`s
+        `CoreUtils.framework` directly and drives
+        `CUPowerSourceMonitor`/`CUPowerSource` via the Objective-C runtime
+        (no headers exist, so there's no real linkage). Live,
+        event-driven, no subprocess.
+      - Once enabled, shows as an icon (scaled through SF Symbols'
+        battery tiers) + percentage in Control Center's device-controls
+        bar, and as a greyed-out row in the status-bar menu under "Audio
+        profile".
 - `Start Daemon`
   - Starts `tools/divoom-daemon` without disconnecting audio first.
   - Disabled while daemon is already running.
