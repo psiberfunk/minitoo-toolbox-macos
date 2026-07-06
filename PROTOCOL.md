@@ -502,11 +502,17 @@ Menu actions:
       multi-second chunked upload, then "Send to Device".
     - **White Noise** — the 8 per-channel volume sliders plus a real on/off
       `Toggle` (replacing the old menu-only "off" item). Queries the
-      device's actual current state (`WhiteNoise/Get`) on open, via a
-      manual "Check Current State" button, and via a 3s auto-refresh timer
-      that only runs while this screen is visible. Any toggle/slider edit
-      re-fetches real device state first and applies the one change on top
-      of it, so it can't clobber other channels back to stale local values.
+      device's actual current state (`WhiteNoise/Get`) on open and via a 3s
+      auto-refresh timer that only runs while this screen is visible. Any
+      toggle/slider edit re-fetches real device state first and applies the
+      one change on top of it, so it can't clobber other channels back to
+      stale local values. **Auto-refresh is quiet by default** — a routine
+      poll that finds nothing changed doesn't touch the status line or show
+      a busy spinner; only a real problem (unreadable reply) surfaces there.
+      A small `AutoRefreshToggle` control (switch + "Auto-refresh (3s)"
+      label, bottom-right of the status line) lets the user turn the
+      periodic polling off entirely instead of the old manual "Check
+      Current State" button.
     - **Custom Faces** — buttons to activate custom face 1/2/3.
   - Each screen resizes the window to its own actual measured content size
     (a `GeometryReader`-based mechanism, not hand-picked constants).

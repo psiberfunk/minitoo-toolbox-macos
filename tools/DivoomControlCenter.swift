@@ -182,11 +182,13 @@ struct SendMediaView: View {
 final class WhiteNoiseModel: ObservableObject {
     unowned let app: DivoomMenuBar
     static let channelNames = ["fan", "frogs", "fire", "waves", "rain", "river", "birdsong", "singingbowls"]
+    static let autoRefreshInterval: TimeInterval = 3
 
     @Published var isOn: Bool = false
     @Published var volumes: [Int] = Array(repeating: 0, count: WhiteNoiseModel.channelNames.count)
     @Published var status: String = "Off"
     @Published var isBusy: Bool = false
+    @Published var autoRefreshEnabled: Bool = true
     var isEditingSlider: Bool = false
     private var autoRefreshTimer: Timer?
 
@@ -197,18 +199,31 @@ final class WhiteNoiseModel: ObservableObject {
     // Only runs while the White Noise screen is actually visible (started/
     // stopped from its onAppear/onDisappear) so a physical button press on
     // the device itself is still noticed without polling in the background
-    // the rest of the time.
+    // the rest of the time. Ticks are silent (see refresh(silent:)) so a
+    // routine poll that finds nothing changed doesn't visibly flicker the
+    // status line every few seconds.
     func startAutoRefresh() {
         stopAutoRefresh()
-        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        guard autoRefreshEnabled else { return }
+        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: Self.autoRefreshInterval, repeats: true) { [weak self] _ in
             guard let self, !self.isBusy, !self.isEditingSlider else { return }
-            self.refresh()
+            self.refresh(silent: true)
         }
     }
 
     func stopAutoRefresh() {
         autoRefreshTimer?.invalidate()
         autoRefreshTimer = nil
+    }
+
+    func setAutoRefreshEnabled(_ enabled: Bool) {
+        autoRefreshEnabled = enabled
+        if enabled {
+            refresh(silent: true)
+            startAutoRefresh()
+        } else {
+            stopAutoRefresh()
+        }
     }
 
     // Both mutations re-fetch the device's actual current state first and
@@ -236,12 +251,18 @@ final class WhiteNoiseModel: ObservableObject {
     /// Queries the device's actual current state via WhiteNoise/Get instead
     /// of assuming whatever this model last set — the device may have been
     /// changed by the official app, or still be playing from a prior app
-    /// session that no longer has this model in memory. Also called on its
-    /// own from a manual "Refresh" button, since there's no push/polling —
-    /// the UI only reflects the device's state as of the last query.
-    func refresh(completion: (() -> Void)? = nil) {
-        isBusy = true
-        status = "Checking device state…"
+    /// session that no longer has this model in memory.
+    ///
+    /// `silent`, used by the auto-refresh timer: applies the fetched state
+    /// with no "Checking…" busy flicker and no status-text update on
+    /// success, so a routine poll that finds nothing different is
+    /// invisible. A real problem (bad reply) still surfaces in `status`
+    /// either way, per "update quietly unless there's a problem".
+    func refresh(silent: Bool = false, completion: (() -> Void)? = nil) {
+        if !silent {
+            isBusy = true
+            status = "Checking device state…"
+        }
         let job: [String: Any] = [
             "Command": "WhiteNoise/Get",
             "DeviceId": 600111083,
@@ -250,8 +271,10 @@ final class WhiteNoiseModel: ObservableObject {
             "UserId": 404779143,
         ]
         guard let body = try? JSONSerialization.data(withJSONObject: job) else {
-            isBusy = false
-            status = "JSON encode error"
+            if !silent {
+                isBusy = false
+                status = "JSON encode error"
+            }
             completion?()
             return
         }
@@ -260,7 +283,7 @@ final class WhiteNoiseModel: ObservableObject {
         DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583, waitForReply: 1.5) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.isBusy = false
+                if !silent { self.isBusy = false }
                 guard
                     let outerData = result.data(using: .utf8),
                     let outer = try? JSONSerialization.jsonObject(with: outerData) as? [String: Any],
@@ -278,7 +301,9 @@ final class WhiteNoiseModel: ObservableObject {
                 if let volumeArray = state["Volume"] as? [Int], volumeArray.count == self.volumes.count {
                     self.volumes = volumeArray
                 }
-                self.status = self.isOn ? "Playing" : "Off"
+                if !silent {
+                    self.status = self.isOn ? "Playing" : "Off"
+                }
                 completion?()
             }
         }
@@ -316,26 +341,37 @@ final class WhiteNoiseModel: ObservableObject {
     }
 }
 
+/// A small "this screen is live" indicator/control, replacing a manual
+/// "Check Current State" button: since auto-refresh runs by default, a
+/// clickable manual refresh is redundant most of the time -- this instead
+/// lets the user turn the background polling off (or back on) if they'd
+/// rather it not talk to the device every few seconds while the screen is
+/// open.
+struct AutoRefreshToggle: View {
+    @Binding var isOn: Bool
+    var interval: TimeInterval
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            Label("Auto-refresh (\(Int(interval))s)", systemImage: "arrow.triangle.2.circlepath")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .help("Periodically re-check the device's actual state while this screen is open, so changes made elsewhere (the official app, a physical button) still show up here.")
+    }
+}
+
 struct WhiteNoiseView: View {
     @ObservedObject var model: WhiteNoiseModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Toggle(isOn: Binding(get: { model.isOn }, set: { model.setOn($0) })) {
-                    Text("White Noise").font(.headline)
-                }
-                .toggleStyle(.switch)
-                Spacer()
-                Button(action: { model.refresh() }) {
-                    Label("Check Current State", systemImage: "arrow.clockwise")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
-                .disabled(model.isBusy)
-                .help("Re-check the device's actual current state — this screen doesn't update live if something else changes it.")
+            Toggle(isOn: Binding(get: { model.isOn }, set: { model.setOn($0) })) {
+                Text("White Noise").font(.headline)
             }
+            .toggleStyle(.switch)
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(WhiteNoiseModel.channelNames.enumerated()), id: \.offset) { index, name in
@@ -367,6 +403,11 @@ struct WhiteNoiseView: View {
                     ProgressView().controlSize(.small)
                 }
                 Text(model.status).font(.caption).foregroundColor(.secondary)
+                Spacer()
+                AutoRefreshToggle(
+                    isOn: Binding(get: { model.autoRefreshEnabled }, set: { model.setAutoRefreshEnabled($0) }),
+                    interval: WhiteNoiseModel.autoRefreshInterval
+                )
             }
         }
         .padding(20)
