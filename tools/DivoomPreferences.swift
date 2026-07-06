@@ -190,6 +190,9 @@ final class PreferencesModel: ObservableObject {
 
     @Published var deviceAddress: String = ""
     @Published var deviceName: String = ""
+    @Published var renameText: String = ""
+    @Published var isRenaming = false
+    @Published var renameStatus: String = ""
 
     @Published var showDockIcon: Bool {
         didSet {
@@ -227,6 +230,25 @@ final class PreferencesModel: ObservableObject {
         deviceName = app.deviceName
     }
 
+    func rename() {
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isRenaming = true
+        renameStatus = "Renaming…"
+        app.setDeviceName(trimmed) { [weak self] ok, _ in
+            guard let self else { return }
+            self.isRenaming = false
+            if ok {
+                self.app.deviceName = trimmed
+                self.deviceName = trimmed
+                self.renameText = ""
+                self.renameStatus = "Renamed. The new name may take a moment to show up everywhere (Bluetooth settings, a fresh scan) — reconnecting via \"Restart Daemon\" if needed."
+            } else {
+                self.renameStatus = "Rename may not have gone through — check the device log."
+            }
+        }
+    }
+
     private func restartBatteryMonitorIfNeeded() {
         if showBatteryStatus {
             app.batteryMonitor.start(usePrivateAPI: useBatteryPrivateAPI)
@@ -257,6 +279,22 @@ struct PreferencesView: View {
                     model.app.openDeviceSetup { model.refreshDeviceInfo() }
                 }
                 .padding(.top, 2)
+
+                if !model.deviceAddress.isEmpty {
+                    HStack {
+                        TextField("New name (up to 26 characters)", text: $model.renameText)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Rename") { model.rename() }
+                            .disabled(model.isRenaming || model.renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    .padding(.top, 6)
+                    if !model.renameStatus.isEmpty {
+                        Text(model.renameStatus)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
 
             Divider()

@@ -522,6 +522,32 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// SPP_SET_DEVICE_NAME (0x75, decimal 117) — decoded from the official
+    /// APK's decompiled `CmdManager.A0`/`SppProc$CMD_TYPE`, not a fresh BT
+    /// capture: it's the very next opcode after the already-hardware-proven
+    /// brightness command (0x74) in the same raw single-opcode family (not
+    /// the newer JSON-over-BT family Atmosphere/Photo Album needed a real
+    /// capture to decode), built with the identical frame/checksum shape.
+    /// Body: 1-byte UTF-8 length prefix + up to 26 UTF-8 bytes of name.
+    func setDeviceName(_ name: String, completion: ((Bool, String) -> Void)? = nil) {
+        var nameBytes = Array(name.utf8)
+        if nameBytes.count > 26 {
+            nameBytes = Array(nameBytes.prefix(26))
+        }
+        var body = Data()
+        body.append(UInt8(nameBytes.count))
+        body.append(contentsOf: nameBytes)
+        let packet = DivoomRawFrame.build(cmd: 0x75, body: body)
+        let path = DivoomRawFrame.writePacketsFile(packet, name: "device-name", in: capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                let hardFailure = result.contains("failed") || result.contains("error") || result.isEmpty
+                self?.setStatus(hardFailure ? "Rename issue: \(result)" : "Device renamed")
+                completion?(!hardFailure, result)
+            }
+        }
+    }
+
     @objc func openCaptures() {
         NSWorkspace.shared.open(capturesDir)
     }
