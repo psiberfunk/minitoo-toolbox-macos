@@ -955,10 +955,23 @@ the standing project preference for this technique over APK tracing.
 
 The app's "Atmosphere" screen: a grid of ~21 selectable animated/static
 backgrounds (VU meters, waveforms, spectrum circles, starfields, cityscapes,
-etc.), plus a separate row of "Text effects" ("Mixing" in the app's UI) that
-overlay something on top of the chosen background. Decoded from a real BT
-HCI snoop capture (same methodology as Photo Album above) of the official
-app selecting a spread of backgrounds and all 6 text-effect options.
+etc.), plus a separate row of "Text effects" ("Mixing" in the app's UI).
+Decoded from a real BT HCI snoop capture (same methodology as Photo Album
+above) of the official app selecting a spread of backgrounds and all 6
+text-effect options.
+
+**Naming hint, worth taking seriously:** the wire commands are
+`Lyric/Enter`/`Lyric/GetConfig`/`Lyric/SetConfig`, not anything
+"Atmosphere"-named — despite the screen being labeled "Atmosphere" in the
+app's UI. Combined with the background choices all being audio-reactive
+visualizations (VU meters, spectrum circles, waveforms) and the separate
+"Text effects" row, this is most plausibly Divoom's music-synced **lyrics
+display** mode: `Background` picks the visual backdrop, and `TextEffect` is
+likely a lyric-text animation style (scroll/fade/karaoke-highlight/etc.)
+that only actually renders something while a song with lyrics is playing
+and being fed to the device. This would explain the hardware test result
+below — treat this as the working theory, not confirmed, until tested with
+real music playing.
 
 ### Protocol
 
@@ -992,11 +1005,30 @@ build/write-packets/submit pattern as the other `tools/divoom_*.py` scripts.
 Also wired natively into Control Center as an "Atmosphere" screen
 (`AtmosphereModel`/`AtmosphereView` in `DivoomControlCenter.swift`): a
 7-column grid of 21 numbered background buttons plus a row of 6 text-effect
-buttons, each tap sending `Lyric/Enter` + `Lyric/SetConfig` as one native
-`DivoomRawFrame` job (no Python subprocess) for a snappy feel, mirroring the
-white-noise screen's fast-path pattern. Since the index-to-visual mapping
-isn't decoded, the UI just shows plain numbers rather than guessed names or
-thumbnails. **Not yet hardware-tested** — built and validated at the
-packet-encoding level (byte-for-byte match against the capture) while the
-Mac was intentionally left disconnected from the MiniToo for the capture
-session; needs a real device test before considering this done.
+buttons, each tap sending `Lyric/Enter` then `Lyric/SetConfig` as two
+separate native `DivoomRawFrame` jobs (no Python subprocess) for a snappy
+feel, mirroring the white-noise screen's fast-path pattern. Since the
+index-to-visual mapping isn't decoded, the UI just shows plain numbers
+rather than guessed names or thumbnails.
+
+**Real bug found and fixed during hardware testing**: both `divoom_atmosphere.py`
+and `AtmosphereModel` originally bundled `Lyric/Enter` + `Lyric/SetConfig`
+into one two-packet daemon job (matching how Photo Album bundles its
+multi-packet upload). That was wrong for this feature — the daemon's
+multi-packet code path in `sendJob` waits for the chunked image/photo-transfer
+request/ACK handshake, which plain independent JSON commands never trigger,
+so it falsely reported `ok:false`/"final ACK not observed" even though every
+packet was actually sent over the wire correctly. Fixed by sending `Enter`
+and `SetConfig` as two separate single-packet jobs instead (each of which
+takes the daemon's fire-and-forget `ok:true` fast path), in both the Python
+CLI and the Swift model.
+
+**Hardware-tested (2026-07-06), both via CLI and the real Control Center
+UI** (clicked through the actual app using System Events + cliclick, not
+just called the daemon directly): selecting `Background` 0, 3, and 5 each
+visibly changed the device's screen to a different animated visual,
+confirmed directly by the user each time. Selecting a `TextEffect` (tested
+value 2) produced no visible change with no music playing, consistent with
+the "Lyric" naming theory above — not re-tested yet with actual music
+playing. Treat `Background` switching as solid; treat `TextEffect` as
+unconfirmed/likely-needs-active-music until re-tested.

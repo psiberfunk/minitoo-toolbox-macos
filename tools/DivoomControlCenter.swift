@@ -778,21 +778,29 @@ final class AtmosphereModel: ObservableObject {
         apply()
     }
 
-    // Sends Lyric/Enter ahead of every SetConfig, same as the official app's
-    // own capture -- there's no confirmation the device stays in the
-    // Atmosphere view across a full round trip, so this doesn't assume it.
+    // Sends Lyric/Enter, then Lyric/SetConfig, as two separate single-packet
+    // jobs -- same as the official app's own capture. Bundling both frames
+    // into one multi-packet job routes through the daemon's chunked
+    // image/photo-transfer ACK-wait path, which plain JSON commands never
+    // satisfy, so the daemon falsely reports failure even though every
+    // packet was still actually sent.
     private func apply() {
         isBusy = true
         status = "Sending…"
-        let packets = [enterPacket(), setConfigPacket(background: selectedBackground, textEffect: selectedTextEffect)]
-        let path = DivoomRawFrame.writePacketsFile(packets, name: "atmosphere-set", in: app.capturesDir)
-        DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.isBusy = false
-                let hardFailure = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
-                let effectLabel = self.selectedTextEffect == 0 ? "off" : "\(self.selectedTextEffect)"
-                self.status = hardFailure ? "Atmosphere issue: \(result)" : "Background \(self.selectedBackground), effect \(effectLabel)."
+        let port = UInt16(app.daemonPort) ?? 40583
+        let enterPath = DivoomRawFrame.writePacketsFile(enterPacket(), name: "atmosphere-enter", in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: enterPath, port: port) { [weak self] enterResult in
+            guard let self else { return }
+            let setPacket = self.setConfigPacket(background: self.selectedBackground, textEffect: self.selectedTextEffect)
+            let setPath = DivoomRawFrame.writePacketsFile(setPacket, name: "atmosphere-set", in: self.app.capturesDir)
+            DivoomRawFrame.submit(packetsPath: setPath, port: port) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.isBusy = false
+                    let hardFailure = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                    let effectLabel = self.selectedTextEffect == 0 ? "off" : "\(self.selectedTextEffect)"
+                    self.status = hardFailure ? "Atmosphere issue: \(result)" : "Background \(self.selectedBackground), effect \(effectLabel)."
+                }
             }
         }
     }

@@ -128,14 +128,16 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    # Each JSON command is its own single-packet job, not bundled into one
+    # multi-packet job -- the daemon's multi-packet path expects the chunked
+    # image/photo-transfer request/ACK handshake, which plain JSON commands
+    # like these never trigger. Bundling them made the daemon falsely report
+    # failure ("final ACK not observed") even though every packet was still
+    # actually sent.
     if args.action == "enter":
-        packets = [build_enter_packet()]
-        name = "atmosphere-enter"
-        wait_for_reply = 0
+        steps = [("atmosphere-enter", build_enter_packet(), 0)]
     elif args.action == "get":
-        packets = [build_enter_packet(), build_get_config_packet()]
-        name = "atmosphere-get"
-        wait_for_reply = 1.5
+        steps = [("atmosphere-enter", build_enter_packet(), 0), ("atmosphere-getconfig", build_get_config_packet(), 1.5)]
     else:
         if args.background is None:
             parser.error("set requires --background")
@@ -143,21 +145,32 @@ def main() -> int:
             parser.error(f"--background must be 0-{NUM_BACKGROUNDS - 1}")
         if not (0 <= args.text_effect < NUM_TEXT_EFFECTS):
             parser.error(f"--text-effect must be 0-{NUM_TEXT_EFFECTS - 1}")
-        packets = [build_enter_packet(), build_set_config_packet(args.background, args.text_effect)]
-        name = f"atmosphere-bg{args.background}-fx{args.text_effect}"
-        wait_for_reply = 0
+        steps = [
+            ("atmosphere-enter", build_enter_packet(), 0),
+            (
+                f"atmosphere-bg{args.background}-fx{args.text_effect}",
+                build_set_config_packet(args.background, args.text_effect),
+                0,
+            ),
+        ]
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = write_packets(packets, args.out_dir / f"{name}-packets-lenpref.bin")
-    print(f"packets={out_path} count={len(packets)}")
+    last_resp: dict = {}
+    for name, packet, wait_for_reply in steps:
+        out_path = write_packets([packet], args.out_dir / f"{name}-packets-lenpref.bin")
+        print(f"packet={out_path}")
+        if args.build_only:
+            continue
+        last_resp = submit(args.host, args.port, out_path, dry_run=args.daemon_dry_run, wait_for_reply=wait_for_reply)
+        print("daemon:", json.dumps(last_resp, ensure_ascii=False))
+        if not last_resp.get("ok"):
+            return 2
 
     if args.build_only:
         return 0
-    resp = submit(args.host, args.port, out_path, dry_run=args.daemon_dry_run, wait_for_reply=wait_for_reply)
-    print("daemon:", json.dumps(resp, ensure_ascii=False))
-    if args.action == "get" and resp.get("reply"):
-        print("device state:", resp["reply"])
-    return 0 if resp.get("ok") else 2
+    if args.action == "get" and last_resp.get("reply"):
+        print("device state:", last_resp["reply"])
+    return 0 if last_resp.get("ok") else 2
 
 
 if __name__ == "__main__":
