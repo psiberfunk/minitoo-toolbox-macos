@@ -21,7 +21,7 @@ Do not probe this family further without a hardware power button within reach.
 ## Device / transport
 
 - Device: `Divoom MiniToo-Audio`
-- Bluetooth address used from macOS: `B1:21:81:B1:F0:84`
+- Bluetooth address: no longer hardcoded — discovered via an in-app scan and cached (see README's "First-time setup"); `B1:21:81:B1:F0:84` below is just an example value for illustrative commands.
 - Transport: Bluetooth Classic SPP over RFCOMM
 - Working app protocol channel from macOS: RFCOMM channel `1`, opened directly via `IOBluetooth`.
 - The macOS serial device `/dev/cu.DivoomMiniToo-Audio` exists, but was unreliable for this protocol. Direct RFCOMM worked.

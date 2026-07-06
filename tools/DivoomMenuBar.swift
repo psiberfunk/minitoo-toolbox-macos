@@ -101,11 +101,19 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var atmosphereModel: AtmosphereModel?
     var preferencesWindow: NSWindow?
     var preferencesModel: PreferencesModel?
+    var deviceSetupWindow: NSWindow?
+    var deviceSetupModel: DeviceSetupModel?
     let batteryMonitor = BatteryMonitorModel()
     var lastMessage = "Ready"
     var lastBrightness: Int = 100
 
-    let address = "B1:21:81:6F:4D:F0"
+    // Persisted so no device MAC is ever hardcoded in source — discovered
+    // via a one-time Bluetooth scan (DivoomDeviceSetup.swift) instead, and
+    // cached here for every launch after that.
+    var address: String {
+        get { UserDefaults.standard.string(forKey: "DeviceAddress") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "DeviceAddress") }
+    }
     let channel = "1"
     let daemonPort = "40583"
     var menuLog: URL { supportDir.appendingPathComponent("divoom-menubar.log") }
@@ -167,6 +175,27 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.refreshTitle()
         }
         refreshTitle()
+
+        // Advanced/scripting override: `--address XX:XX:XX:XX:XX:XX` on the
+        // app's own launch args re-caches a new address before anything else
+        // runs, without needing the Preferences UI.
+        let args = CommandLine.arguments
+        if let flagIndex = args.firstIndex(of: "--address"), args.count > flagIndex + 1 {
+            address = DeviceScanModel.normalize(args[flagIndex + 1])
+            appendLog("address overridden via --address launch arg")
+        }
+
+        guard !address.isEmpty else {
+            setStatus("No MiniToo set up yet")
+            openDeviceSetup { [weak self] in
+                self?.startDaemon(disconnectFirst: true)
+            }
+            if UserDefaults.standard.bool(forKey: "ShowBatteryStatus") {
+                batteryMonitor.start(usePrivateAPI: UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI"))
+            }
+            return
+        }
+
         // Don't blindly disconnect+restart on every launch: if a daemon from a
         // prior app instance is already running and holding a live RFCOMM
         // channel, tearing down the Bluetooth connection out from under it

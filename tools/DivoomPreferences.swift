@@ -188,6 +188,8 @@ final class BatteryMonitorModel: ObservableObject {
 final class PreferencesModel: ObservableObject {
     unowned let app: DivoomMenuBar
 
+    @Published var deviceAddress: String = ""
+
     @Published var showDockIcon: Bool {
         didSet {
             app.showDockIcon = showDockIcon
@@ -215,6 +217,11 @@ final class PreferencesModel: ObservableObject {
         self.showDockIcon = app.showDockIcon
         self.showBatteryStatus = UserDefaults.standard.bool(forKey: "ShowBatteryStatus")
         self.useBatteryPrivateAPI = UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI")
+        self.deviceAddress = app.address
+    }
+
+    func refreshDeviceAddress() {
+        deviceAddress = app.address
     }
 
     private func restartBatteryMonitorIfNeeded() {
@@ -232,6 +239,19 @@ struct PreferencesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Device").font(.subheadline).bold()
+                Text(model.deviceAddress.isEmpty ? "Not set up yet" : model.deviceAddress)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(model.deviceAddress.isEmpty ? .secondary : .primary)
+                Button(model.deviceAddress.isEmpty ? "Set Up Device…" : "Change Device…") {
+                    model.app.openDeviceSetup { model.refreshDeviceAddress() }
+                }
+                .padding(.top, 2)
+            }
+
+            Divider()
+
             Toggle("Show Dock Icon", isOn: $model.showDockIcon)
 
             Divider()

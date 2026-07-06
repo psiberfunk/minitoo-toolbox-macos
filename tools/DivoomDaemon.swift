@@ -306,7 +306,11 @@ final class DivoomDaemon {
 }
 
 let args = CommandLine.arguments
-let address = args.count > 1 ? args[1] : "B1:21:81:6F:4D:F0"
+guard args.count > 1, !args[1].isEmpty else {
+    fputs("fatal: device MAC address required as first argument, e.g. divoom-daemon B1:21:81:6F:4D:F0 1 40583\n", stderr)
+    exit(1)
+}
+let address = args[1]
 let channel = args.count > 2 ? UInt8(args[2])! : 1
 let port = args.count > 3 ? UInt16(args[3])! : 40583
 

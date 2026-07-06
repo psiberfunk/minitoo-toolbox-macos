@@ -14,7 +14,11 @@ final class Delegate: NSObject, IOBluetoothRFCOMMChannelDelegate {
     func rfcommChannelQueueSpaceAvailable(_ rfcommChannel: IOBluetoothRFCOMMChannel!) { }
 }
 
-let address = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "B1:21:81:6F:4D:F0"
+guard CommandLine.arguments.count > 1, !CommandLine.arguments[1].isEmpty else {
+    fputs("usage: DivoomRFCOMMSend <address> [channel] [packetPath] [delay]\n", stderr)
+    exit(1)
+}
+let address = CommandLine.arguments[1]
 let channelID = BluetoothRFCOMMChannelID(CommandLine.arguments.count > 2 ? UInt8(CommandLine.arguments[2])! : 1)
 let packetPath = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "captures/mac-send/captured-packets-lenpref.bin"
 let delay = CommandLine.arguments.count > 4 ? Double(CommandLine.arguments[4])! : 0.012

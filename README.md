@@ -16,16 +16,33 @@ The core of this repo is a Swift daemon that keeps the Divoom app channel open, 
 
 ## Device assumptions
 
-The current defaults are for one tested device:
-
 ```text
-Bluetooth name: Divoom MiniToo-Audio
-Bluetooth MAC:  B1:21:81:B1:F0:84
 RFCOMM channel: 1
 Daemon port:    40583
 ```
 
-If your device has a different Bluetooth address, update the address in the Swift tools or pass it manually to `tools/divoom-daemon`.
+The device's Bluetooth MAC address is **not** hardcoded — see "First-time setup" below for how the app finds and remembers it.
+
+## First-time setup
+
+The menu-bar app doesn't ship with any device's MAC address baked in. The first time it launches with no address cached yet, it opens a **"Set Up MiniToo"** window instead of starting the daemon:
+
+1. Power on the MiniToo and make sure it isn't currently connected to a phone/tablet (a Bluetooth Classic device generally only holds one active connection at a time).
+2. Click **Scan for Devices**. This runs a short (~8s) Bluetooth inquiry (via `blueutil`, already a dependency) plus a check of already-paired devices, and lists whatever it finds by name — entries that look like a Divoom device are sorted to the top, but everything nearby is shown in case the name doesn't match.
+3. Click **Use This Device** next to the right entry. If the device isn't already paired, this triggers pairing; macOS may show its own native pairing prompt the first time.
+4. The address is cached (`UserDefaults`) and used for every future launch — you won't see this window again unless you use "Change Device…".
+
+To change devices later, or to fix a wrong auto-detected address, open **Preferences… (⌘,)** — the "Device" section shows the currently cached address and has a **Change Device…** button that reopens the same scan flow.
+
+**Advanced / scripting:** you can skip the scan UI entirely and set the address directly:
+
+- Pass `--address XX:XX:XX:XX:XX:XX` as a launch argument to the app itself (re-caches it on that launch, then behaves normally).
+- The standalone CLI tools (`tools/divoom-daemon`, and the raw dev tools `DivoomRFCOMM`/`DivoomRFCOMMSend`) all take the address as their first positional argument — there's no default, so it must always be passed explicitly:
+  ```bash
+  tools/divoom-daemon B1:21:81:6F:4D:F0 1 40583
+  ```
+
+If you don't know your device's MAC and don't want to use the in-app scan, `blueutil --inquiry` or `blueutil --paired` from a Terminal with Bluetooth permission will list it by name alongside its address.
 
 ## Requirements
 
