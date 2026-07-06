@@ -15,6 +15,12 @@ log.
 | Atmosphere | Done. 21 backgrounds + 6 text effects, all real on-device names known, state readback works, quiet auto-refresh. `TextEffect` produced no visible change tested with silence playing — unconfirmed whether it needs active music or isn't working. |
 | Full-screen send (160×128) | Done. Panel is 160 wide × 128 tall, not square; square sends are left-justified, not centered. |
 | Device MAC address | Done. No longer hardcoded anywhere — discovered via in-app Bluetooth scan, cached in `UserDefaults`. |
-| Device rename (`0x75`) | Implemented, protocol verified byte-for-byte against a real capture. **Known unresolved issue**: on-device persistence of a new name has been unreliable in testing. Parked. |
+| Device rename (`0x75`) | **Shelved.** Implemented, protocol verified byte-for-byte against a real capture, but on-device persistence of a new name has been unreliable/glitchy in testing. Lower value than other open items — deliberately deprioritized for now. Partly implemented only, no PR yet. Revisit later. |
 | Alarms (`0x43`/`0x42`) | APK-decoded only, never hardware/capture-verified. |
 | Games (`0xa0`/`0x17`/`0x21`/`0x88`) | Same as Alarms. |
+
+## Upstream docs housekeeping
+PR #11's description was updated with a root-cause sentence (no branch diff
+change). PR #16 is a new standalone upstream docs PR carrying the
+custom-face dead-ends and Bluetooth troubleshooting notes. Device-rename
+docs stay local-only until that feature gets its own PR.
