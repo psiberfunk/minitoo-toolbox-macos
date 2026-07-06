@@ -981,9 +981,20 @@ Three JSON commands, all opcode `0x01`, no binary transfer involved at all
 - `{"Command":"Lyric/Enter","DeviceId":...,"Token":...,"UserId":...}` —
   switches the device into the Atmosphere view.
 - `{"Command":"Lyric/GetConfig","DeviceId":...,"Token":...,"UserId":...}` —
-  queries current config (reply format not decoded — the capture only
-  showed the app sending this, no readable JSON reply on the wire the way
-  `WhiteNoise/Get` has one; treat as fire-and-forget for now).
+  queries current config. **Does get a real reply**, confirmed via a fresh
+  BT capture read: `{"Command":"Lyric/GetConfig","Background":N,
+  "TextEffect":N}` (pretty-printed with `\n`/`\t` on the wire). An earlier
+  pass wrongly concluded there was no reply — that was a parser bug, not a
+  device limitation: the reply arrived on a *different* L2CAP CID than the
+  one the outgoing command used (each direction of a bidirectional L2CAP
+  channel gets numbered independently by each endpoint), and the initial
+  investigation only checked the CID the command itself was sent on. Also
+  hit a second, related parser bug while re-checking this: the reply is
+  long enough (pretty-printed JSON) to span more than one HCI ACL fragment,
+  which `parse_btsnoop_rfcomm.py`'s original naive per-ACL-packet parsing
+  silently mis-decoded as a bogus extra "CID". Both fixed in that script
+  (see its module docstring) — it now does real ACL reassembly using the
+  PB (packet boundary) flag bits before parsing L2CAP/RFCOMM.
 - `{"Background":<int>,"Command":"Lyric/SetConfig","DeviceId":...,
   "TextEffect":<int>,"Token":...,"UserId":...}` — selects a background and a
   text effect. `Background` is 0-indexed into the grid (0-20 observed across
@@ -1014,7 +1025,13 @@ their IP and isn't reproduced here) plus a dropdown `Picker` for
 `TextEffect` showing the 6 real names above. Each selection sends
 `Lyric/Enter` then `Lyric/SetConfig` as two separate native `DivoomRawFrame`
 jobs (no Python subprocess) for a snappy feel, mirroring the white-noise
-screen's fast-path pattern.
+screen's fast-path pattern. A "Check Current State" button (and an
+automatic refresh on opening the screen) sends `Lyric/Enter` +
+`Lyric/GetConfig` with `waitForReply`, parses the real device reply, and
+updates the highlighted background icon / dropdown selection to match —
+same pattern as `WhiteNoise/Get`'s refresh in the White Noise screen.
+Hardware-confirmed working: reading back state correctly showed whatever
+background/effect was actually last set on the device.
 
 **Icon quality is a known, deliberately deferred to-do (2026-07-06):** the
 21 background icons are original hand-drawn SwiftUI vector shapes, good
