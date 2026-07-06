@@ -246,3 +246,7 @@ If video/GIF transfer is too slow, reduce frames before reducing pixels:
 ```
 
 Keep `--zstd-window-log 17` unless deliberately testing protocol behavior.
+
+If `blueutil` fails/aborts when run directly from an interactive Terminal, that's a TCC quirk tied to the calling process — it works fine invoked as a child of the signed `.app` (which is how the app itself uses it). Not a device problem.
+
+Hearing two Bluetooth connect chimes when the daemon starts is cosmetic: RFCOMM connects first, then macOS separately auto-restores the A2DP audio profile a couple seconds later. Not a bug.

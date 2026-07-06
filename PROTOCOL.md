@@ -544,3 +544,20 @@ CLI:
 # or any explicit clock id:
 .venv/bin/python tools/divoom_clock.py 984
 ```
+
+### Populating the empty custom-face slots: known dead ends
+
+The custom-face slots are currently empty on this device — selection works, but how the official app actually populates a slot with a custom animation/image is still unknown. From bugzmanov's `FINDINGS.md` cross-reference, these paths have already been tried and confirmed **not** to be it, to save re-treading them in a future capture session:
+
+- **`0xBE`, fake-`FileId` custom-face emulation** — re-uploads the payload
+  on every single face switch instead of a real one-time persistent write;
+  not actually the "instant" on-device slot it should be.
+- **`0x8C`, stored-animation slots** — never produced any device response
+  at all.
+- **General photo/gallery upload** (the `0x8F` path) — writes into the
+  device's single shared gallery, with no way to pin one image to a
+  specific custom-face slot.
+
+Most likely path forward: a real Bluetooth HCI-snoop capture of the
+official app populating a slot, same method used to resolve other
+protocol gaps in this document.
