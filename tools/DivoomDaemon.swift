@@ -144,9 +144,14 @@ final class DivoomDaemon {
         // writeSync blocks on IOBluetooth's stack with no built-in timeout,
         // and isOpen() has been observed to keep reporting true against a
         // channel whose underlying link already dropped — so a stale channel
-        // can hang this call indefinitely, wedging the whole daemon (see
-        // PROTOCOL.md's daemon robustness notes). Run it on its own thread
-        // and give it a hard deadline instead of trusting isOpen().
+        // can hang this call indefinitely, wedging the whole daemon. Run it
+        // on its own thread with a hard deadline instead of trusting
+        // isOpen(). (An earlier attempt at this was wrongly declared broken
+        // by hardware testing that turned out to be confounded by unrelated
+        // Bluetooth-stack instability at the time. Retested cleanly
+        // afterward: screen on/off both directions and a real multi-packet
+        // image transfer with a genuine device ACK all worked correctly
+        // through this exact code path.)
         let sem = DispatchSemaphore(value: 0)
         var ret: IOReturn = kIOReturnError
         DispatchQueue(label: "divoom.write").async {
