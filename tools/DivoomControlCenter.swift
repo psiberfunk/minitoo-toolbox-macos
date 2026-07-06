@@ -726,14 +726,15 @@ struct PhotoAlbumView: View {
 /// Atmosphere screen's background/text-effect selector, decoded from a
 /// real BT capture rather than APK tracing (see PROTOCOL.md's Atmosphere
 /// section). Background is a 0-indexed slot in the app's ~21-entry grid;
-/// TextEffect is a separate 0-5 overlay ("Text effects"/"Mixing" in the
-/// official app, 0 = off). Which index renders which specific visual isn't
-/// decoded yet -- this screen exposes the raw indices as numbered buttons
-/// rather than guessing at labels.
+/// TextEffect is a separate 0-5 selector for the "Text effects" row, whose
+/// names (per the user cross-checking the real app's UI) are, in order:
+/// Mixing, Fade Out, Fly Up, Fly Out to Left, Rotation, No Effect -- note
+/// index 0 is "Mixing", not "Off"; the actual off state is index 5.
 final class AtmosphereModel: ObservableObject {
     unowned let app: DivoomMenuBar
     static let backgroundCount = 21
     static let textEffectCount = 6
+    static let textEffectNames = ["Mixing", "Fade Out", "Fly Up", "Fly Out to Left", "Rotation", "No Effect"]
 
     @Published var selectedBackground: Int = 0
     @Published var selectedTextEffect: Int = 0
@@ -798,7 +799,7 @@ final class AtmosphereModel: ObservableObject {
                     guard let self else { return }
                     self.isBusy = false
                     let hardFailure = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
-                    let effectLabel = self.selectedTextEffect == 0 ? "off" : "\(self.selectedTextEffect)"
+                    let effectLabel = Self.textEffectNames[self.selectedTextEffect]
                     self.status = hardFailure ? "Atmosphere issue: \(result)" : "Background \(self.selectedBackground), effect \(effectLabel)."
                 }
             }
@@ -808,46 +809,44 @@ final class AtmosphereModel: ObservableObject {
 
 struct AtmosphereView: View {
     @ObservedObject var model: AtmosphereModel
-    private let backgroundColumns = Array(repeating: GridItem(.fixed(40), spacing: 8), count: 7)
+    // 7 columns x 3 rows -- more compact than a 3x7 grid at this tile size.
+    private let backgroundColumns = Array(repeating: GridItem(.fixed(36), spacing: 6), count: 7)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Atmosphere").font(.headline)
-            Text("Selects one of the built-in animated backgrounds. Index-only for now — which number is which visual isn't decoded yet, so cross-check against the device.")
-                .font(.caption)
-                .foregroundColor(.secondary)
 
             Text("Background").font(.subheadline)
-            LazyVGrid(columns: backgroundColumns, spacing: 8) {
+            LazyVGrid(columns: backgroundColumns, spacing: 6) {
                 ForEach(0..<AtmosphereModel.backgroundCount, id: \.self) { index in
                     Button(action: { model.selectBackground(index) }) {
-                        Text("\(index)")
-                            .frame(width: 40, height: 32)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(model.selectedBackground == index ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.12))
-                            )
+                        VStack(spacing: 2) {
+                            AtmosphereBackgroundIcon(index: index, size: 36)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.accentColor, lineWidth: model.selectedBackground == index ? 2 : 0)
+                                )
+                            Text("\(index)").font(.system(size: 8)).foregroundColor(.secondary)
+                        }
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isBusy)
                 }
             }
 
-            Text("Text Effect (Mixing)").font(.subheadline)
-            HStack(spacing: 8) {
+            Text("Text Effect").font(.subheadline)
+            Picker("", selection: Binding(
+                get: { model.selectedTextEffect },
+                set: { model.selectTextEffect($0) }
+            )) {
                 ForEach(0..<AtmosphereModel.textEffectCount, id: \.self) { index in
-                    Button(action: { model.selectTextEffect(index) }) {
-                        Text(index == 0 ? "Off" : "\(index)")
-                            .frame(width: 40, height: 32)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(model.selectedTextEffect == index ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.12))
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(model.isBusy)
+                    Text(AtmosphereModel.textEffectNames[index]).tag(index)
                 }
             }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 160)
+            .disabled(model.isBusy)
 
             HStack(spacing: 8) {
                 if model.isBusy {

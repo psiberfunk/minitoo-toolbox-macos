@@ -19,7 +19,7 @@ swiftc "$TOOLS/DivoomDaemon.swift" \
   -o "$TOOLS/divoom-daemon"
 
 echo "Building menu-bar app executable..."
-swiftc "$TOOLS/DivoomMenuBar.swift" "$TOOLS/DivoomControlCenter.swift" "$TOOLS/DivoomPreferences.swift" \
+swiftc "$TOOLS/DivoomMenuBar.swift" "$TOOLS/DivoomControlCenter.swift" "$TOOLS/DivoomPreferences.swift" "$TOOLS/DivoomAtmosphereIcons.swift" \
   -framework AppKit \
   -framework SwiftUI \
   -framework Network \

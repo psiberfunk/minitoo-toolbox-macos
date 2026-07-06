@@ -14,17 +14,19 @@ Real protocol, confirmed from the capture:
   - {"Command":"Lyric/GetConfig", ...} -- JSON, queries current config.
   - {"Command":"Lyric/SetConfig","Background":<int 0-20>,"TextEffect":<int
     0-5>, ...} -- JSON, selects a background (0-indexed, ~21 total match the
-    ~21-entry grid in the app) and independently a text-effect overlay
-    (0=off/none, 1-5 = the 5 non-off entries under "Text effects/Mixing").
-    Confirmed by capturing 15 distinct Background selections spanning the
-    observed range (0,2,6,7,8,12,13,15,17,18,19,20) and all 6 TextEffect
+    ~21-entry grid in the app) and independently a text effect. Per the
+    user cross-checking the real app's UI, TextEffect's 6 named options in
+    order are: Mixing, Fade Out, Fly Up, Fly Out to Left, Rotation, No
+    Effect (index 0 is "Mixing", not "off" -- the actual off state is index
+    5). Confirmed by capturing 15 distinct Background selections spanning
+    the observed range (0,2,6,7,8,12,13,15,17,18,19,20) and all 6 TextEffect
     values (0-5) at a fixed Background -- both fields vary independently and
     take effect immediately with no other fields required.
 
 Not yet decoded: which Background index corresponds to which named
-screensaver in the grid (the capture only gives indices, not labels), and
-what each TextEffect value actually renders as. Confirm on real hardware
-before assuming any specific index means a specific visual.
+screensaver in the grid (the capture only gives indices, not labels).
+Confirm on real hardware before assuming any specific index means a
+specific visual.
 """
 from __future__ import annotations
 
@@ -32,6 +34,8 @@ import argparse
 import json
 import socket
 from pathlib import Path
+
+TEXT_EFFECT_NAMES = ["Mixing", "Fade Out", "Fly Up", "Fly Out to Left", "Rotation", "No Effect"]
 
 import send_divoom_image
 from divoom_clock import DEFAULT_DEVICE_ID, DEFAULT_DEVICE_PASSWORD, DEFAULT_TOKEN, DEFAULT_USER_ID
@@ -124,7 +128,12 @@ def main() -> int:
     sub.add_parser("get", help="query current Atmosphere config")
     p_set = sub.add_parser("set", help="select a background and/or text effect")
     p_set.add_argument("--background", type=int, default=None, help=f"background index 0-{NUM_BACKGROUNDS - 1}")
-    p_set.add_argument("--text-effect", type=int, default=0, help=f"text effect index 0-{NUM_TEXT_EFFECTS - 1} (0=off)")
+    p_set.add_argument(
+        "--text-effect",
+        type=int,
+        default=0,
+        help=f"text effect index 0-{NUM_TEXT_EFFECTS - 1}: {', '.join(f'{i}={n}' for i, n in enumerate(TEXT_EFFECT_NAMES))}",
+    )
 
     args = parser.parse_args()
 

@@ -988,14 +988,17 @@ Three JSON commands, all opcode `0x01`, no binary transfer involved at all
   "TextEffect":<int>,"Token":...,"UserId":...}` — selects a background and a
   text effect. `Background` is 0-indexed into the grid (0-20 observed across
   15 captured selections spanning that full range, confirming ~21 total
-  entries). `TextEffect` is 0-5 (0 = off, confirmed by capturing all 6
-  values back-to-back at a fixed `Background`). Both fields vary
-  independently and take effect immediately with no other fields required.
+  entries). `TextEffect` is 0-5; per the user cross-checking the real app's
+  UI, the 6 named options in order are: **Mixing, Fade Out, Fly Up, Fly Out
+  to Left, Rotation, No Effect** — note index 0 is "Mixing", not "off"; the
+  actual off state is index 5 ("No Effect"). Both fields vary independently
+  and take effect immediately with no other fields required.
 
 **Not yet decoded:** which `Background` index renders which specific visual
-in the grid, and what each `TextEffect` value actually looks like. The
-capture gives indices, not labels — confirm on real hardware before
-assuming a specific number means a specific background.
+in the grid. The capture gives indices, not labels — confirm on real
+hardware before assuming a specific number means a specific background.
+(`TextEffect`'s names ARE known now, see above — it's only `Background`
+that's still index-only.)
 
 ### Implementation
 
@@ -1004,12 +1007,22 @@ assuming a specific number means a specific background.
 build/write-packets/submit pattern as the other `tools/divoom_*.py` scripts.
 Also wired natively into Control Center as an "Atmosphere" screen
 (`AtmosphereModel`/`AtmosphereView` in `DivoomControlCenter.swift`): a
-7-column grid of 21 numbered background buttons plus a row of 6 text-effect
-buttons, each tap sending `Lyric/Enter` then `Lyric/SetConfig` as two
-separate native `DivoomRawFrame` jobs (no Python subprocess) for a snappy
-feel, mirroring the white-noise screen's fast-path pattern. Since the
-index-to-visual mapping isn't decoded, the UI just shows plain numbers
-rather than guessed names or thumbnails.
+7x3 grid of small icon buttons for `Background` (original vector
+reinterpretations of each background's general look — see
+`tools/DivoomAtmosphereIcons.swift` — since Divoom's actual artwork is
+their IP and isn't reproduced here) plus a dropdown `Picker` for
+`TextEffect` showing the 6 real names above. Each selection sends
+`Lyric/Enter` then `Lyric/SetConfig` as two separate native `DivoomRawFrame`
+jobs (no Python subprocess) for a snappy feel, mirroring the white-noise
+screen's fast-path pattern.
+
+**Icon quality is a known, deliberately deferred to-do (2026-07-06):** the
+21 background icons are original hand-drawn SwiftUI vector shapes, good
+enough to be recognizable but not visually polished — the user plans to
+run them through some kind of AI image-unification pass later to make them
+look consistent/nicer, which isn't something achievable here without an
+image-generation tool. Don't spend further effort polishing individual
+icon shapes unless asked; this is parked, not forgotten.
 
 **Real bug found and fixed during hardware testing**: both `divoom_atmosphere.py`
 and `AtmosphereModel` originally bundled `Lyric/Enter` + `Lyric/SetConfig`
