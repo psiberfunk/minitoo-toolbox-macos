@@ -160,6 +160,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(disabled("Last: \(shortStatus(lastMessage))"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
+        menu.addItem(brightnessSliderItem(enabled: daemonRunning))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Start Daemon (only if audio disconnected)", #selector(startDaemonMenu), enabled: !daemonRunning && !audioConnected))
         menu.addItem(item("Disconnect Audio + Start Daemon", #selector(disconnectAndStartMenu), enabled: !daemonRunning))
@@ -383,6 +384,30 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.setStatus(hardFailure ? "Screen issue: \(result)" : "Screen \(on ? "on" : "off")")
             }
         }
+    }
+
+    func brightnessSliderItem(enabled: Bool) -> NSMenuItem {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 34))
+
+        let label = NSTextField(labelWithString: "Brightness")
+        label.frame = NSRect(x: 14, y: 8, width: 74, height: 18)
+        label.font = NSFont.menuFont(ofSize: 0)
+        label.isEnabled = enabled
+        container.addSubview(label)
+
+        let slider = NSSlider(value: Double(lastBrightness), minValue: 0, maxValue: 100, target: self, action: #selector(brightnessSliderChanged(_:)))
+        slider.frame = NSRect(x: 92, y: 6, width: 116, height: 20)
+        slider.isContinuous = false
+        slider.isEnabled = enabled
+        container.addSubview(slider)
+
+        let menuItem = NSMenuItem()
+        menuItem.view = container
+        return menuItem
+    }
+
+    @objc func brightnessSliderChanged(_ sender: NSSlider) {
+        setBrightness(Int(sender.intValue))
     }
 
     func setBrightness(_ level: Int) {
