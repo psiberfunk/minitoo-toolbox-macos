@@ -176,28 +176,31 @@ struct DeviceSetupView: View {
             }
 
             if !scan.results.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(scan.results) { device in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(device.name).font(.body)
-                                Text(device.address)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundColor(.secondary)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(scan.results) { device in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(device.name).font(.body)
+                                    Text(device.address)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if device.paired {
+                                    Text("Paired")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                Button("Use This Device") { model.choose(device) }
+                                    .disabled(model.isWorking)
                             }
-                            Spacer()
-                            if device.paired {
-                                Text("Paired")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                            Button("Use This Device") { model.choose(device) }
-                                .disabled(model.isWorking)
+                            .padding(.vertical, 6)
+                            Divider()
                         }
-                        .padding(.vertical, 6)
-                        Divider()
                     }
                 }
+                .frame(height: 220)
             }
 
             DisclosureGroup("Advanced: enter MAC address manually", isExpanded: $showManualEntry) {
