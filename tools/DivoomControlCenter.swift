@@ -422,6 +422,7 @@ final class DeviceControlsModel: ObservableObject {
 
 struct DeviceControlsBar: View {
     @ObservedObject var model: DeviceControlsModel
+    @ObservedObject var batteryMonitor: BatteryMonitorModel
 
     var body: some View {
         HStack(spacing: 10) {
@@ -453,6 +454,29 @@ struct DeviceControlsBar: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .frame(width: 32, alignment: .leading)
+
+            // Only appears once "Show Battery Status" is enabled in
+            // Preferences — there's no official battery command for this
+            // device, so this is read via bluetoothd's own diagnostic logs
+            // or a private framework (see DivoomPreferences.swift). Reserves
+            // this slot as soon as monitoring is enabled, not only once a
+            // reading actually arrives, so the window only resizes once.
+            if batteryMonitor.isEnabled {
+                Divider().frame(height: 16)
+                HStack(spacing: 1) {
+                    Image(systemName: BatteryMonitorModel.batteryIconName(percent: batteryMonitor.percent))
+                    if batteryMonitor.percent != nil, !batteryMonitor.isOnBattery {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 9))
+                    }
+                }
+                .foregroundColor(.secondary)
+                .help("Device battery")
+                Text(batteryMonitor.percent.map { "\($0)%" } ?? "…")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 32, alignment: .leading)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
@@ -541,11 +565,12 @@ struct ControlCenterView: View {
     @ObservedObject var whiteNoiseModel: WhiteNoiseModel
     @ObservedObject var customFacesModel: CustomFacesModel
     @ObservedObject var deviceControlsModel: DeviceControlsModel
+    @ObservedObject var batteryMonitor: BatteryMonitorModel
     @State private var selection: ControlCenterFunction?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DeviceControlsBar(model: deviceControlsModel)
+            DeviceControlsBar(model: deviceControlsModel, batteryMonitor: batteryMonitor)
             Divider()
             Group {
                 if let selection {
@@ -626,7 +651,7 @@ extension DivoomMenuBar {
             self.customFacesModel = customFacesModel
             let deviceControlsModel = DeviceControlsModel(app: self)
             self.deviceControlsModel = deviceControlsModel
-            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel))
+            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Divoom Control Center"
             window.styleMask = [.titled, .closable, .miniaturizable]

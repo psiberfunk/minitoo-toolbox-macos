@@ -88,6 +88,9 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var whiteNoiseModel: WhiteNoiseModel?
     var customFacesModel: CustomFacesModel?
     var deviceControlsModel: DeviceControlsModel?
+    var preferencesWindow: NSWindow?
+    var preferencesModel: PreferencesModel?
+    let batteryMonitor = BatteryMonitorModel()
     var lastMessage = "Ready"
     var lastBrightness: Int = 100
 
@@ -131,12 +134,6 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
     }
 
-    @objc func toggleShowDockIcon() {
-        showDockIcon.toggle()
-        applyDockIconPolicy()
-        rebuildMenu()
-    }
-
     // Standard Dock-icon-click hook: if the user shows the Dock icon and
     // clicks it with no window open, open Control Center instead of doing
     // nothing (a regular-policy app with zero windows looks broken
@@ -169,6 +166,9 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             startDaemon(disconnectFirst: true)
         }
+        if UserDefaults.standard.bool(forKey: "ShowBatteryStatus") {
+            batteryMonitor.start(usePrivateAPI: UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI"))
+        }
     }
 
     func refreshTitle() {
@@ -187,6 +187,12 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         menu.addItem(disabled("Daemon: \(daemonRunning ? "Running" : "Stopped")"))
         menu.addItem(disabled("Audio profile: \(audioConnected ? "Connected" : "Disconnected")"))
+        if batteryMonitor.isEnabled {
+            let chargingSuffix = (batteryMonitor.percent != nil && !batteryMonitor.isOnBattery) ? " (charging)" : ""
+            let text = (batteryMonitor.percent.map { "Battery: \($0)%" } ?? "Battery: …") + chargingSuffix
+            let iconName = BatteryMonitorModel.batteryIconName(percent: batteryMonitor.percent)
+            menu.addItem(disabled(text, image: NSImage(systemSymbolName: iconName, accessibilityDescription: nil)))
+        }
         menu.addItem(disabled("Last: \(shortStatus(lastMessage))"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
@@ -202,6 +208,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(debuggingToolsSubmenu())
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
         menu.addItem(item("Quit", #selector(quit)))
     }
 
@@ -212,32 +219,21 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         submenu.addItem(item("Open Protocol Notes", #selector(openProtocol)))
         submenu.addItem(item("Open Menu Log", #selector(openMenuLog)))
         submenu.addItem(item("Open Daemon Log", #selector(openDaemonLog)))
-        submenu.addItem(NSMenuItem.separator())
-        // Dock icon is off by default (this is a menu-bar utility), but
-        // showing it makes the app discoverable to tools that only see
-        // regular foreground apps (e.g. UI-automation tooling), and clicking
-        // the Dock icon opens Control Center if nothing's open.
-        submenu.addItem(checkboxItem("Show Dock Icon", #selector(toggleShowDockIcon), checked: showDockIcon))
         parent.submenu = submenu
         return parent
     }
 
-    func item(_ title: String, _ action: Selector, enabled: Bool = true) -> NSMenuItem {
-        let i = NSMenuItem(title: title, action: action, keyEquivalent: "")
+    func item(_ title: String, _ action: Selector, enabled: Bool = true, keyEquivalent: String = "") -> NSMenuItem {
+        let i = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
         i.target = self
         i.isEnabled = enabled
         return i
     }
 
-    func checkboxItem(_ title: String, _ action: Selector, checked: Bool) -> NSMenuItem {
-        let i = item(title, action)
-        i.state = checked ? .on : .off
-        return i
-    }
-
-    func disabled(_ title: String) -> NSMenuItem {
+    func disabled(_ title: String, image: NSImage? = nil) -> NSMenuItem {
         let i = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         i.isEnabled = false
+        i.image = image
         return i
     }
 
