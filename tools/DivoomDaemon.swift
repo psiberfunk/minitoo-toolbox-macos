@@ -143,26 +143,16 @@ final class DivoomDaemon {
         }
         var d = pkt
         let len = UInt16(d.count)
-        // writeSync blocks on IOBluetooth's stack with no built-in timeout,
-        // and isOpen() has been observed to keep reporting true against a
-        // channel whose underlying link already dropped — so a stale channel
-        // can hang this call indefinitely, wedging the whole daemon (see
-        // PROTOCOL.md's daemon robustness notes). Run it on its own thread
-        // and give it a hard deadline instead of trusting isOpen().
-        let sem = DispatchSemaphore(value: 0)
-        var ret: IOReturn = kIOReturnError
-        DispatchQueue(label: "divoom.write").async {
-            ret = d.withUnsafeMutableBytes { ptr in
-                ch.writeSync(ptr.baseAddress, length: len)
-            }
-            sem.signal()
-        }
-        guard sem.wait(timeout: .now() + 2.0) == .success else {
-            // Force the next send to reopen rather than reuse this channel —
-            // the abandoned writeSync call may still complete later, but we
-            // no longer wait on or trust it.
-            rfcomm = nil
-            throw NSError(domain: "DivoomDaemon", code: 99, userInfo: [NSLocalizedDescriptionKey: "RFCOMM write timed out after 2s, channel appears stale — will reopen on next send"])
+        // IOBluetoothRFCOMMChannel calls appear to require the same thread
+        // that opened the channel (has its run loop registered) — dispatching
+        // writeSync to a different thread was tried and confirmed BROKEN via
+        // real hardware testing: it reported kIOReturnSuccess without the
+        // device ever receiving the bytes. Back to a plain same-thread call;
+        // the stale-channel-hang problem this was meant to solve is still
+        // open (see PROTOCOL.md daemon robustness notes) — needs a fix that
+        // doesn't change threads.
+        let ret = d.withUnsafeMutableBytes { ptr in
+            ch.writeSync(ptr.baseAddress, length: len)
         }
         guard ret == kIOReturnSuccess else {
             throw NSError(domain: "DivoomDaemon", code: Int(ret), userInfo: [NSLocalizedDescriptionKey: "RFCOMM write failed ret=0x\(String(ret, radix: 16))"])
