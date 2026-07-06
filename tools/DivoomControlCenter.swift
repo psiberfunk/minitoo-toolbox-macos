@@ -736,6 +736,17 @@ final class AtmosphereModel: ObservableObject {
     static let textEffectCount = 6
     // Real on-device names, per the user checking the official app's UI.
     static let textEffectNames = ["Mix", "Dissolve", "Push Up", "Push Left", "Rotate", "None"]
+    // Real on-device names for each Background slot, per the user reading
+    // them directly off the device. Index 20 ("Photo Album") confirms the
+    // earlier guess that this slot is a "use your own photo" tile rather
+    // than a generated visual; index 16 ("Black Hole") retroactively
+    // explains why an earlier stardust icon draft looked like a vortex --
+    // that wasn't a rendering bug, it was accidentally on-theme.
+    static let backgroundNames = [
+        "Pulsation", "Vitality", "Sound Wave Ring", "Rhythm", "Melody", "The Album", "Pink Space",
+        "Bubbles", "Blue Sky", "Vinyl", "Starlight", "Night View", "Sunset", "Quicksand", "Gradient",
+        "Geometry", "Black Hole", "Imagination", "Vaporware", "Sunrise", "Photo Album",
+    ]
 
     @Published var selectedBackground: Int = 0
     @Published var selectedTextEffect: Int = 0
@@ -832,7 +843,7 @@ final class AtmosphereModel: ObservableObject {
                     if let textEffect = state["TextEffect"] as? Int {
                         self.selectedTextEffect = textEffect
                     }
-                    self.status = "Background \(self.selectedBackground), effect \(Self.textEffectNames[self.selectedTextEffect])."
+                    self.status = "\(Self.backgroundNames[self.selectedBackground]), effect \(Self.textEffectNames[self.selectedTextEffect])."
                 }
             }
         }
@@ -868,8 +879,9 @@ final class AtmosphereModel: ObservableObject {
                     guard let self else { return }
                     self.isBusy = false
                     let hardFailure = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                    let backgroundLabel = Self.backgroundNames[self.selectedBackground]
                     let effectLabel = Self.textEffectNames[self.selectedTextEffect]
-                    self.status = hardFailure ? "Atmosphere issue: \(result)" : "Background \(self.selectedBackground), effect \(effectLabel)."
+                    self.status = hardFailure ? "Atmosphere issue: \(result)" : "\(backgroundLabel), effect \(effectLabel)."
                 }
             }
         }
@@ -910,6 +922,7 @@ struct AtmosphereView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isBusy)
+                    .help(AtmosphereModel.backgroundNames[index])
                 }
             }
 

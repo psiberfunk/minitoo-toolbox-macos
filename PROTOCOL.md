@@ -1006,24 +1006,35 @@ Three JSON commands, all opcode `0x01`, no binary transfer involved at all
   off state is index 5 ("None"). Both fields vary independently and take
   effect immediately with no other fields required.
 
-**Not yet decoded:** which `Background` index renders which specific visual
-in the grid. The capture gives indices, not labels — confirm on real
-hardware before assuming a specific number means a specific background.
-(`TextEffect`'s names ARE known now, see above — it's only `Background`
-that's still index-only.)
+**`Background`'s 21 names are also known now**, per the user reading them
+directly off the device (not from a fresh capture — see `Background`
+index caveat below): **Pulsation, Vitality, Sound Wave Ring, Rhythm,
+Melody, The Album, Pink Space, Bubbles, Blue Sky, Vinyl, Starlight, Night
+View, Sunset, Quicksand, Gradient, Geometry, Black Hole, Imagination,
+Vaporware, Sunrise, Photo Album** (indices 0-20 in that order). Index 20
+("Photo Album") confirms the earlier guess that this slot is a "use your
+own photo" tile, not a generated visual. These names corroborate (without
+independently BT-proving) the row-major index<->grid-position assumption
+used when building the icon set below — several line up thematically well
+(2 "Sound Wave Ring", 7 "Bubbles", 9 "Vinyl", 16 "Black Hole", 18
+"Vaporware", 20 "Photo Album").
 
 ### Implementation
 
 `tools/divoom_atmosphere.py` — CLI with `enter`, `get`, and
 `set --background N [--text-effect N]` subcommands, same
-build/write-packets/submit pattern as the other `tools/divoom_*.py` scripts.
-Also wired natively into Control Center as an "Atmosphere" screen
+build/write-packets/submit pattern as the other `tools/divoom_*.py` scripts;
+`BACKGROUND_NAMES`/`TEXT_EFFECT_NAMES` used for CLI help text and for
+printing a friendly `set:`/`device state (named):` line alongside the raw
+indices. Also wired natively into Control Center as an "Atmosphere" screen
 (`AtmosphereModel`/`AtmosphereView` in `DivoomControlCenter.swift`): a
 7x3 grid of small icon buttons for `Background` (original vector
 reinterpretations of each background's general look — see
 `tools/DivoomAtmosphereIcons.swift` — since Divoom's actual artwork is
-their IP and isn't reproduced here) plus a dropdown `Picker` for
-`TextEffect` showing the 6 real names above. Each selection sends
+their IP and isn't reproduced here; each button's tooltip shows the real
+name) plus a dropdown `Picker` for `TextEffect` showing the 6 real names
+above. Status text after any send/refresh shows the real background/effect
+names, not raw indices. Each selection sends
 `Lyric/Enter` then `Lyric/SetConfig` as two separate native `DivoomRawFrame`
 jobs (no Python subprocess) for a snappy feel, mirroring the white-noise
 screen's fast-path pattern. A "Check Current State" button, an automatic
