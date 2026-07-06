@@ -306,7 +306,7 @@ final class DivoomDaemon {
 }
 
 let args = CommandLine.arguments
-let address = args.count > 1 ? args[1] : "B1:21:81:B1:F0:84"
+let address = args.count > 1 ? args[1] : "B1:21:81:6F:4D:F0"
 let channel = args.count > 2 ? UInt8(args[2])! : 1
 let port = args.count > 3 ? UInt16(args[3])! : 40583
 
