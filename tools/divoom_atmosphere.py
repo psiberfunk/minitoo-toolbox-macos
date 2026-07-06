@@ -2,7 +2,7 @@
 """Divoom MiniToo Atmosphere selector: the app's screen for picking one of
 ~21 animated/static screensaver-style backgrounds (VU meters, waveforms,
 starfields, cityscapes, etc.), plus a separate overlay "Text effects"
-("Mixing") option layered on top of the chosen background.
+option layered on top of the chosen background.
 
 Decoded from a real Bluetooth HCI snoop capture of the official Divoom
 Android app (same methodology as Photo Album -- see PROTOCOL.md and
@@ -11,17 +11,20 @@ Android app (same methodology as Photo Album -- see PROTOCOL.md and
 Real protocol, confirmed from the capture:
   - {"Command":"Lyric/Enter", ...} -- JSON, switches the device into the
     Atmosphere view.
-  - {"Command":"Lyric/GetConfig", ...} -- JSON, queries current config.
+  - {"Command":"Lyric/GetConfig", ...} -- JSON, queries current config; does
+    get a real reply (see PROTOCOL.md for the earlier false "no reply"
+    conclusion and how it was fixed).
   - {"Command":"Lyric/SetConfig","Background":<int 0-20>,"TextEffect":<int
     0-5>, ...} -- JSON, selects a background (0-indexed, ~21 total match the
     ~21-entry grid in the app) and independently a text effect. Per the
-    user cross-checking the real app's UI, TextEffect's 6 named options in
-    order are: Mixing, Fade Out, Fly Up, Fly Out to Left, Rotation, No
-    Effect (index 0 is "Mixing", not "off" -- the actual off state is index
-    5). Confirmed by capturing 15 distinct Background selections spanning
-    the observed range (0,2,6,7,8,12,13,15,17,18,19,20) and all 6 TextEffect
-    values (0-5) at a fixed Background -- both fields vary independently and
-    take effect immediately with no other fields required.
+    user reading the on-device labels directly, TextEffect's 6 named
+    options in order are: Mix, Dissolve, Push Up, Push Left, Rotate, None
+    (index 0 is "Mix", not "off" -- the actual off state is index 5,
+    "None"). Confirmed by capturing 15 distinct Background selections
+    spanning the observed range (0,2,6,7,8,12,13,15,17,18,19,20) and all 6
+    TextEffect values (0-5) at a fixed Background -- both fields vary
+    independently and take effect immediately with no other fields
+    required.
 
 Not yet decoded: which Background index corresponds to which named
 screensaver in the grid (the capture only gives indices, not labels).
@@ -35,7 +38,7 @@ import json
 import socket
 from pathlib import Path
 
-TEXT_EFFECT_NAMES = ["Mixing", "Fade Out", "Fly Up", "Fly Out to Left", "Rotation", "No Effect"]
+TEXT_EFFECT_NAMES = ["Mix", "Dissolve", "Push Up", "Push Left", "Rotate", "None"]
 
 import send_divoom_image
 from divoom_clock import DEFAULT_DEVICE_ID, DEFAULT_DEVICE_PASSWORD, DEFAULT_TOKEN, DEFAULT_USER_ID

@@ -955,7 +955,8 @@ the standing project preference for this technique over APK tracing.
 
 The app's "Atmosphere" screen: a grid of ~21 selectable animated/static
 backgrounds (VU meters, waveforms, spectrum circles, starfields, cityscapes,
-etc.), plus a separate row of "Text effects" ("Mixing" in the app's UI).
+etc.), plus a separate row of "Text effects" (Mix/Dissolve/Push Up/Push
+Left/Rotate/None in the app's UI).
 Decoded from a real BT HCI snoop capture (same methodology as Photo Album
 above) of the official app selecting a spread of backgrounds and all 6
 text-effect options.
@@ -999,11 +1000,11 @@ Three JSON commands, all opcode `0x01`, no binary transfer involved at all
   "TextEffect":<int>,"Token":...,"UserId":...}` — selects a background and a
   text effect. `Background` is 0-indexed into the grid (0-20 observed across
   15 captured selections spanning that full range, confirming ~21 total
-  entries). `TextEffect` is 0-5; per the user cross-checking the real app's
-  UI, the 6 named options in order are: **Mixing, Fade Out, Fly Up, Fly Out
-  to Left, Rotation, No Effect** — note index 0 is "Mixing", not "off"; the
-  actual off state is index 5 ("No Effect"). Both fields vary independently
-  and take effect immediately with no other fields required.
+  entries). `TextEffect` is 0-5; per the user reading the on-device labels
+  directly, the 6 named options in order are: **Mix, Dissolve, Push Up,
+  Push Left, Rotate, None** — note index 0 is "Mix", not "off"; the actual
+  off state is index 5 ("None"). Both fields vary independently and take
+  effect immediately with no other fields required.
 
 **Not yet decoded:** which `Background` index renders which specific visual
 in the grid. The capture gives indices, not labels — confirm on real
@@ -1025,10 +1026,11 @@ their IP and isn't reproduced here) plus a dropdown `Picker` for
 `TextEffect` showing the 6 real names above. Each selection sends
 `Lyric/Enter` then `Lyric/SetConfig` as two separate native `DivoomRawFrame`
 jobs (no Python subprocess) for a snappy feel, mirroring the white-noise
-screen's fast-path pattern. A "Check Current State" button (and an
-automatic refresh on opening the screen) sends `Lyric/Enter` +
-`Lyric/GetConfig` with `waitForReply`, parses the real device reply, and
-updates the highlighted background icon / dropdown selection to match —
+screen's fast-path pattern. A "Check Current State" button, an automatic
+refresh on opening the screen, and a 3s auto-refresh timer while the
+screen stays open (skipped while busy) send `Lyric/Enter` +
+`Lyric/GetConfig` with `waitForReply`, parse the real device reply, and
+update the highlighted background icon / dropdown selection to match —
 same pattern as `WhiteNoise/Get`'s refresh in the White Noise screen.
 Hardware-confirmed working: reading back state correctly showed whatever
 background/effect was actually last set on the device.

@@ -734,15 +734,34 @@ final class AtmosphereModel: ObservableObject {
     unowned let app: DivoomMenuBar
     static let backgroundCount = 21
     static let textEffectCount = 6
-    static let textEffectNames = ["Mixing", "Fade Out", "Fly Up", "Fly Out to Left", "Rotation", "No Effect"]
+    // Real on-device names, per the user checking the official app's UI.
+    static let textEffectNames = ["Mix", "Dissolve", "Push Up", "Push Left", "Rotate", "None"]
 
     @Published var selectedBackground: Int = 0
     @Published var selectedTextEffect: Int = 0
     @Published var status: String = "Choose a background."
     @Published var isBusy: Bool = false
+    private var autoRefreshTimer: Timer?
 
     init(app: DivoomMenuBar) {
         self.app = app
+    }
+
+    // Only runs while the Atmosphere screen is actually visible (started/
+    // stopped from its onAppear/onDisappear), same pattern as White Noise's
+    // auto-refresh, so a change made from the official app or a physical
+    // button is still noticed without polling in the background otherwise.
+    func startAutoRefresh() {
+        stopAutoRefresh()
+        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            guard let self, !self.isBusy else { return }
+            self.refresh()
+        }
+    }
+
+    func stopAutoRefresh() {
+        autoRefreshTimer?.invalidate()
+        autoRefreshTimer = nil
     }
 
     private func enterPacket() -> Data {
@@ -916,7 +935,13 @@ struct AtmosphereView: View {
             }
         }
         .padding(20)
-        .onAppear { model.refresh() }
+        .onAppear {
+            model.refresh()
+            model.startAutoRefresh()
+        }
+        .onDisappear {
+            model.stopAutoRefresh()
+        }
     }
 }
 
@@ -1034,6 +1059,7 @@ extension DivoomMenuBar {
             // Noise's auto-refresh is running leaves it polling forever.
             NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
                 self?.whiteNoiseModel?.stopAutoRefresh()
+                self?.atmosphereModel?.stopAutoRefresh()
             }
         }
         if isNewWindow {
