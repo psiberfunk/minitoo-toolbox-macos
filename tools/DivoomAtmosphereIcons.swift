@@ -6,9 +6,12 @@ import SwiftUI
 /// Divoom's actual bitmap artwork, since that's their IP. Index-to-visual
 /// mapping is inferred from the *display order* of backgrounds in the
 /// official app's grid (top-left to bottom-right, 3 columns, per the
-/// screenshots this was designed against) -- not independently confirmed
-/// against the real `Background` wire value for each slot, so treat the
-/// specific index<->visual pairing as best-effort, not verified.
+/// screenshots this was designed against), not independently confirmed
+/// against the real `Background` wire value for each slot via a fresh
+/// capture. Corroborated (not proven) by the real on-device names in
+/// `AtmosphereModel.backgroundNames`, which line up thematically with most
+/// of these icons (e.g. index 2 "Sound Wave Ring", 7 "Bubbles", 9 "Vinyl",
+/// 16 "Black Hole", 18 "Vaporware", 20 "Photo Album").
 struct AtmosphereBackgroundIcon: View {
     let index: Int
     var size: CGFloat = 52

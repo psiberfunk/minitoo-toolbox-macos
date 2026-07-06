@@ -26,10 +26,9 @@ Real protocol, confirmed from the capture:
     independently and take effect immediately with no other fields
     required.
 
-Not yet decoded: which Background index corresponds to which named
-screensaver in the grid (the capture only gives indices, not labels).
-Confirm on real hardware before assuming any specific index means a
-specific visual.
+Background's 21 names are also known now (per the user reading them
+directly off the device) -- see BACKGROUND_NAMES below. Index 20 ("Photo
+Album") confirms it's a "use your own photo" slot, not a generated visual.
 """
 from __future__ import annotations
 
@@ -39,6 +38,11 @@ import socket
 from pathlib import Path
 
 TEXT_EFFECT_NAMES = ["Mix", "Dissolve", "Push Up", "Push Left", "Rotate", "None"]
+BACKGROUND_NAMES = [
+    "Pulsation", "Vitality", "Sound Wave Ring", "Rhythm", "Melody", "The Album", "Pink Space",
+    "Bubbles", "Blue Sky", "Vinyl", "Starlight", "Night View", "Sunset", "Quicksand", "Gradient",
+    "Geometry", "Black Hole", "Imagination", "Vaporware", "Sunrise", "Photo Album",
+]
 
 import send_divoom_image
 from divoom_clock import DEFAULT_DEVICE_ID, DEFAULT_DEVICE_PASSWORD, DEFAULT_TOKEN, DEFAULT_USER_ID
@@ -130,7 +134,12 @@ def main() -> int:
     sub.add_parser("enter", help="switch the device into the Atmosphere view")
     sub.add_parser("get", help="query current Atmosphere config")
     p_set = sub.add_parser("set", help="select a background and/or text effect")
-    p_set.add_argument("--background", type=int, default=None, help=f"background index 0-{NUM_BACKGROUNDS - 1}")
+    p_set.add_argument(
+        "--background",
+        type=int,
+        default=None,
+        help=f"background index 0-{NUM_BACKGROUNDS - 1}: {', '.join(f'{i}={n}' for i, n in enumerate(BACKGROUND_NAMES))}",
+    )
     p_set.add_argument(
         "--text-effect",
         type=int,
@@ -182,6 +191,15 @@ def main() -> int:
         return 0
     if args.action == "get" and last_resp.get("reply"):
         print("device state:", last_resp["reply"])
+        try:
+            state = json.loads(last_resp["reply"])
+            bg, fx = state.get("Background"), state.get("TextEffect")
+            if bg is not None and fx is not None:
+                print(f"device state (named): {BACKGROUND_NAMES[bg]} ({bg}), effect {TEXT_EFFECT_NAMES[fx]} ({fx})")
+        except (json.JSONDecodeError, IndexError):
+            pass
+    elif args.action == "set":
+        print(f"set: {BACKGROUND_NAMES[args.background]} ({args.background}), effect {TEXT_EFFECT_NAMES[args.text_effect]} ({args.text_effect})")
     return 0 if last_resp.get("ok") else 2
 
 
