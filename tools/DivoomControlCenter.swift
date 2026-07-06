@@ -617,7 +617,7 @@ final class PhotoAlbumModel: ObservableObject {
             guard let self else { return }
             let py = self.app.pythonExecutable()
             let script = self.app.toolRoot.appendingPathComponent("divoom_album.py").path
-            let (code, out) = self.app.run(py, ["--build-only", script, "--out-dir", self.app.capturesDir.path, "add-photo", url.path])
+            let (code, out) = self.app.run(py, [script, "--out-dir", self.app.capturesDir.path, "--build-only", "add-photo", url.path])
             DispatchQueue.main.async {
                 self.isBusy = false
                 guard code == 0 else {

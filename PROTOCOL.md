@@ -902,6 +902,22 @@ end-to-end: an uploaded test image appeared correctly and persistently in
 the gallery alongside a real photo added moments earlier via the official
 Android app in the same session.
 
+**Stills only — not a gap in this implementation.** The blob header has a
+`frame_count` field, suggesting multi-frame (GIF/video) content is part of
+the same protocol family, but the *official Divoom app itself* fails to
+add a video/GIF to this specific feature on the current app version
+(picker shows a black/generic preview, "Send" does nothing — confirmed
+directly on the same Android setup used for the capture above). A
+same-session hardware test here of the natural extension (concatenate
+self-delimiting JPEGs after one combined length field, `frame_count>1` —
+the same structural pattern the sibling `0x8b` protocol already uses for
+its own multi-frame payload) uploaded without crashing but displayed only
+as a static first frame — consistent with the real app not actually
+supporting this either right now, not with our own encoding being wrong.
+Not pursued further; revisit only if a future app version is confirmed to
+support it, ideally re-verified with a fresh capture rather than more
+guessing.
+
 ### How the capture was obtained
 
 Useful to remember if a similar investigation is needed again — see also

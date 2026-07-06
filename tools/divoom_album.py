@@ -22,6 +22,14 @@ Real protocol, confirmed byte-for-byte against the capture:
      [row_blocks][col_blocks][jpeg_length u32 big-endian][raw JPEG bytes].
      row_blocks=8, col_blocks=10 => 128x160, i.e. the full panel. The
      content is a plain, standard JPEG (not WebP, not eZip).
+
+Stills only: the official Divoom app itself fails to add a video/GIF to
+this feature (black preview, "Send" does nothing) on the current app
+version, so this isn't a gap in our own tooling -- there's no working
+reference behavior to match. Confirmed on real hardware (2026-07-06) that
+a naive multi-frame extension (concatenated JPEGs, frame_count>1) uploads
+without crashing but only displays as a static first frame, consistent
+with the feature not actually being functional upstream either.
 """
 from __future__ import annotations
 
