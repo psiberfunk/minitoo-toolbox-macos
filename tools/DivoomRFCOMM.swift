@@ -41,7 +41,7 @@ func hexData(_ s: String) -> Data {
     return out
 }
 
-let address = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "B1:21:81:6F:4D:F0"
+let address = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "B1:21:81:B1:F0:84"
 guard let dev = IOBluetoothDevice(addressString: address) else {
     fatalError("device not found: \(address)")
 }
