@@ -198,11 +198,13 @@ struct SendMediaView: View {
 final class WhiteNoiseModel: ObservableObject {
     unowned let app: DivoomMenuBar
     static let channelNames = ["fan", "frogs", "fire", "waves", "rain", "river", "birdsong", "singingbowls"]
+    static let autoRefreshInterval: TimeInterval = 3
 
     @Published var isOn: Bool = false
     @Published var volumes: [Int] = Array(repeating: 0, count: WhiteNoiseModel.channelNames.count)
     @Published var status: String = "Off"
     @Published var isBusy: Bool = false
+    @Published var autoRefreshEnabled: Bool = true
     var isEditingSlider: Bool = false
     private var autoRefreshTimer: Timer?
 
@@ -213,18 +215,31 @@ final class WhiteNoiseModel: ObservableObject {
     // Only runs while the White Noise screen is actually visible (started/
     // stopped from its onAppear/onDisappear) so a physical button press on
     // the device itself is still noticed without polling in the background
-    // the rest of the time.
+    // the rest of the time. Ticks are silent (see refresh(silent:)) so a
+    // routine poll that finds nothing changed doesn't visibly flicker the
+    // status line every few seconds.
     func startAutoRefresh() {
         stopAutoRefresh()
-        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        guard autoRefreshEnabled else { return }
+        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: Self.autoRefreshInterval, repeats: true) { [weak self] _ in
             guard let self, !self.isBusy, !self.isEditingSlider else { return }
-            self.refresh()
+            self.refresh(silent: true)
         }
     }
 
     func stopAutoRefresh() {
         autoRefreshTimer?.invalidate()
         autoRefreshTimer = nil
+    }
+
+    func setAutoRefreshEnabled(_ enabled: Bool) {
+        autoRefreshEnabled = enabled
+        if enabled {
+            refresh(silent: true)
+            startAutoRefresh()
+        } else {
+            stopAutoRefresh()
+        }
     }
 
     // Both mutations re-fetch the device's actual current state first and
@@ -252,12 +267,18 @@ final class WhiteNoiseModel: ObservableObject {
     /// Queries the device's actual current state via WhiteNoise/Get instead
     /// of assuming whatever this model last set — the device may have been
     /// changed by the official app, or still be playing from a prior app
-    /// session that no longer has this model in memory. Also called on its
-    /// own from a manual "Refresh" button, since there's no push/polling —
-    /// the UI only reflects the device's state as of the last query.
-    func refresh(completion: (() -> Void)? = nil) {
-        isBusy = true
-        status = "Checking device state…"
+    /// session that no longer has this model in memory.
+    ///
+    /// `silent`, used by the auto-refresh timer: applies the fetched state
+    /// with no "Checking…" busy flicker and no status-text update on
+    /// success, so a routine poll that finds nothing different is
+    /// invisible. A real problem (bad reply) still surfaces in `status`
+    /// either way, per "update quietly unless there's a problem".
+    func refresh(silent: Bool = false, completion: (() -> Void)? = nil) {
+        if !silent {
+            isBusy = true
+            status = "Checking device state…"
+        }
         let job: [String: Any] = [
             "Command": "WhiteNoise/Get",
             "DeviceId": 600111083,
@@ -266,8 +287,10 @@ final class WhiteNoiseModel: ObservableObject {
             "UserId": 404779143,
         ]
         guard let body = try? JSONSerialization.data(withJSONObject: job) else {
-            isBusy = false
-            status = "JSON encode error"
+            if !silent {
+                isBusy = false
+                status = "JSON encode error"
+            }
             completion?()
             return
         }
@@ -276,7 +299,7 @@ final class WhiteNoiseModel: ObservableObject {
         DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583, waitForReply: 1.5) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.isBusy = false
+                if !silent { self.isBusy = false }
                 guard
                     let outerData = result.data(using: .utf8),
                     let outer = try? JSONSerialization.jsonObject(with: outerData) as? [String: Any],
@@ -294,7 +317,9 @@ final class WhiteNoiseModel: ObservableObject {
                 if let volumeArray = state["Volume"] as? [Int], volumeArray.count == self.volumes.count {
                     self.volumes = volumeArray
                 }
-                self.status = self.isOn ? "Playing" : "Off"
+                if !silent {
+                    self.status = self.isOn ? "Playing" : "Off"
+                }
                 completion?()
             }
         }
@@ -332,26 +357,39 @@ final class WhiteNoiseModel: ObservableObject {
     }
 }
 
+/// A small "this screen is live" indicator/control, replacing a manual
+/// "Check Current State" button: since auto-refresh runs by default, a
+/// clickable manual refresh is redundant most of the time -- this instead
+/// lets the user turn the background polling off (or back on) if they'd
+/// rather it not talk to the device every few seconds while the screen is
+/// open. Shared between White Noise and Atmosphere, the two screens whose
+/// on-device state can change from outside this app (official app, or a
+/// physical button).
+struct AutoRefreshToggle: View {
+    @Binding var isOn: Bool
+    var interval: TimeInterval
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            Label("Auto-refresh (\(Int(interval))s)", systemImage: "arrow.triangle.2.circlepath")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .help("Periodically re-check the device's actual state while this screen is open, so changes made elsewhere (the official app, a physical button) still show up here.")
+    }
+}
+
 struct WhiteNoiseView: View {
     @ObservedObject var model: WhiteNoiseModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Toggle(isOn: Binding(get: { model.isOn }, set: { model.setOn($0) })) {
-                    Text("White Noise").font(.headline)
-                }
-                .toggleStyle(.switch)
-                Spacer()
-                Button(action: { model.refresh() }) {
-                    Label("Check Current State", systemImage: "arrow.clockwise")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
-                .disabled(model.isBusy)
-                .help("Re-check the device's actual current state — this screen doesn't update live if something else changes it.")
+            Toggle(isOn: Binding(get: { model.isOn }, set: { model.setOn($0) })) {
+                Text("White Noise").font(.headline)
             }
+            .toggleStyle(.switch)
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(WhiteNoiseModel.channelNames.enumerated()), id: \.offset) { index, name in
@@ -383,6 +421,11 @@ struct WhiteNoiseView: View {
                     ProgressView().controlSize(.small)
                 }
                 Text(model.status).font(.caption).foregroundColor(.secondary)
+                Spacer()
+                AutoRefreshToggle(
+                    isOn: Binding(get: { model.autoRefreshEnabled }, set: { model.setAutoRefreshEnabled($0) }),
+                    interval: WhiteNoiseModel.autoRefreshInterval
+                )
             }
         }
         .padding(20)
@@ -727,13 +770,13 @@ struct PhotoAlbumView: View {
 /// real BT capture rather than APK tracing (see PROTOCOL.md's Atmosphere
 /// section). Background is a 0-indexed slot in the app's ~21-entry grid;
 /// TextEffect is a separate 0-5 selector for the "Text effects" row, whose
-/// names (per the user cross-checking the real app's UI) are, in order:
-/// Mixing, Fade Out, Fly Up, Fly Out to Left, Rotation, No Effect -- note
-/// index 0 is "Mixing", not "Off"; the actual off state is index 5.
+/// real on-device names (see textEffectNames below) start at index 0
+/// "Mix", not "Off" -- the actual off state is index 5, "None".
 final class AtmosphereModel: ObservableObject {
     unowned let app: DivoomMenuBar
     static let backgroundCount = 21
     static let textEffectCount = 6
+    static let autoRefreshInterval: TimeInterval = 3
     // Real on-device names, per the user checking the official app's UI.
     static let textEffectNames = ["Mix", "Dissolve", "Push Up", "Push Left", "Rotate", "None"]
     // Real on-device names for each Background slot, per the user reading
@@ -752,6 +795,7 @@ final class AtmosphereModel: ObservableObject {
     @Published var selectedTextEffect: Int = 0
     @Published var status: String = "Choose a background."
     @Published var isBusy: Bool = false
+    @Published var autoRefreshEnabled: Bool = true
     private var autoRefreshTimer: Timer?
 
     init(app: DivoomMenuBar) {
@@ -762,17 +806,31 @@ final class AtmosphereModel: ObservableObject {
     // stopped from its onAppear/onDisappear), same pattern as White Noise's
     // auto-refresh, so a change made from the official app or a physical
     // button is still noticed without polling in the background otherwise.
+    // Ticks are silent (see refresh(silent:)) so a routine poll that finds
+    // nothing changed doesn't visibly flicker the status line every few
+    // seconds.
     func startAutoRefresh() {
         stopAutoRefresh()
-        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        guard autoRefreshEnabled else { return }
+        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: Self.autoRefreshInterval, repeats: true) { [weak self] _ in
             guard let self, !self.isBusy else { return }
-            self.refresh()
+            self.refresh(silent: true)
         }
     }
 
     func stopAutoRefresh() {
         autoRefreshTimer?.invalidate()
         autoRefreshTimer = nil
+    }
+
+    func setAutoRefreshEnabled(_ enabled: Bool) {
+        autoRefreshEnabled = enabled
+        if enabled {
+            refresh(silent: true)
+            startAutoRefresh()
+        } else {
+            stopAutoRefresh()
+        }
     }
 
     private func enterPacket() -> Data {
@@ -815,9 +873,18 @@ final class AtmosphereModel: ObservableObject {
     // read; an earlier pass mistakenly concluded there was no reply because
     // it only checked the same L2CAP CID the outgoing command used, not the
     // (different) CID the device's reply arrived on.
-    func refresh() {
-        isBusy = true
-        status = "Checking device state…"
+    //
+    // `silent`, used by the auto-refresh timer: applies the fetched state
+    // (moving the highlighted icon / dropdown selection if it actually
+    // changed) with no "Checking…" busy flicker and no status-text update
+    // on success, so a routine poll that finds nothing different is
+    // invisible. A real problem still surfaces in `status` either way, per
+    // "update quietly unless there's a problem".
+    func refresh(silent: Bool = false) {
+        if !silent {
+            isBusy = true
+            status = "Checking device state…"
+        }
         let port = UInt16(app.daemonPort) ?? 40583
         let enterPath = DivoomRawFrame.writePacketsFile(enterPacket(), name: "atmosphere-enter", in: app.capturesDir)
         DivoomRawFrame.submit(packetsPath: enterPath, port: port) { [weak self] _ in
@@ -826,7 +893,7 @@ final class AtmosphereModel: ObservableObject {
             DivoomRawFrame.submit(packetsPath: getPath, port: port, waitForReply: 1.5) { [weak self] result in
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    self.isBusy = false
+                    if !silent { self.isBusy = false }
                     guard
                         let outerData = result.data(using: .utf8),
                         let outer = try? JSONSerialization.jsonObject(with: outerData) as? [String: Any],
@@ -843,7 +910,9 @@ final class AtmosphereModel: ObservableObject {
                     if let textEffect = state["TextEffect"] as? Int {
                         self.selectedTextEffect = textEffect
                     }
-                    self.status = "\(Self.backgroundNames[self.selectedBackground]), effect \(Self.textEffectNames[self.selectedTextEffect])."
+                    if !silent {
+                        self.status = "\(Self.backgroundNames[self.selectedBackground]), effect \(Self.textEffectNames[self.selectedTextEffect])."
+                    }
                 }
             }
         }
@@ -895,17 +964,7 @@ struct AtmosphereView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Atmosphere").font(.headline)
-                Spacer()
-                Button(action: { model.refresh() }) {
-                    Label("Check Current State", systemImage: "arrow.clockwise")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
-                .disabled(model.isBusy)
-            }
+            Text("Atmosphere").font(.headline)
 
             Text("Background").font(.subheadline)
             LazyVGrid(columns: backgroundColumns, spacing: 6) {
@@ -945,6 +1004,11 @@ struct AtmosphereView: View {
                     ProgressView().controlSize(.small)
                 }
                 Text(model.status).font(.caption).foregroundColor(.secondary)
+                Spacer()
+                AutoRefreshToggle(
+                    isOn: Binding(get: { model.autoRefreshEnabled }, set: { model.setAutoRefreshEnabled($0) }),
+                    interval: AtmosphereModel.autoRefreshInterval
+                )
             }
         }
         .padding(20)

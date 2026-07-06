@@ -536,11 +536,18 @@ Menu actions:
       panel resolution" above) — toggling it rebuilds the preview.
     - **White Noise** — the 8 per-channel volume sliders plus a real on/off
       `Toggle` (replacing the old menu-only "off" item). Queries the
-      device's actual current state (`WhiteNoise/Get`) on open, via a
-      manual "Check Current State" button, and via a 3s auto-refresh timer
-      that only runs while this screen is visible. Any toggle/slider edit
-      re-fetches real device state first and applies the one change on top
-      of it, so it can't clobber other channels back to stale local values.
+      device's actual current state (`WhiteNoise/Get`) on open and via a 3s
+      auto-refresh timer that only runs while this screen is visible. Any
+      toggle/slider edit re-fetches real device state first and applies the
+      one change on top of it, so it can't clobber other channels back to
+      stale local values. **Auto-refresh is quiet by default** (see
+      `AutoRefreshToggle` below) — a routine poll that finds nothing changed
+      doesn't touch the status line or show a busy spinner; only a real
+      problem (unreadable reply) surfaces there. The old manual "Check
+      Current State" button was removed since auto-refresh runs by default;
+      a small `AutoRefreshToggle` control (switch + "Auto-refresh (3s)"
+      label, bottom-right of the status line) lets the user turn the
+      periodic polling off entirely instead.
     - **Custom Faces** — buttons to activate custom face 1/2/3.
     - **Photo Album** — choose a photo, preview, "Add to Album" — uploads
       into the device's *persistent* on-device photo gallery (see "Photo
@@ -1037,14 +1044,18 @@ above. Status text after any send/refresh shows the real background/effect
 names, not raw indices. Each selection sends
 `Lyric/Enter` then `Lyric/SetConfig` as two separate native `DivoomRawFrame`
 jobs (no Python subprocess) for a snappy feel, mirroring the white-noise
-screen's fast-path pattern. A "Check Current State" button, an automatic
-refresh on opening the screen, and a 3s auto-refresh timer while the
-screen stays open (skipped while busy) send `Lyric/Enter` +
-`Lyric/GetConfig` with `waitForReply`, parse the real device reply, and
-update the highlighted background icon / dropdown selection to match —
-same pattern as `WhiteNoise/Get`'s refresh in the White Noise screen.
-Hardware-confirmed working: reading back state correctly showed whatever
-background/effect was actually last set on the device.
+screen's fast-path pattern. An automatic refresh on opening the screen and
+a 3s auto-refresh timer while the screen stays open (skipped while busy,
+toggleable via the same `AutoRefreshToggle` control White Noise uses) send
+`Lyric/Enter` + `Lyric/GetConfig` with `waitForReply`, parse the real
+device reply, and update the highlighted background icon / dropdown
+selection to match — same pattern as `WhiteNoise/Get`'s refresh in the
+White Noise screen, including the quiet-unless-there's-a-problem behavior
+(no status-text/busy flicker on a routine poll that finds nothing
+changed). Hardware-confirmed working, including picking up an externally
+-made change (set via the CLI while the screen was open, moved to the
+right icon on the next poll tick with no flicker) and stopping the polling
+promptly when the window closes.
 
 **Icon quality is a known, deliberately deferred to-do (2026-07-06):** the
 21 background icons are original hand-drawn SwiftUI vector shapes, good
