@@ -39,7 +39,12 @@ def main() -> int:
     parser.add_argument("--speed", type=int, default=None, help="frame duration in milliseconds; default 1000 for images or derived from --fps for GIF/video")
     parser.add_argument("--fps", type=float, default=6.0, help="GIF/video sampling fps; also derives speed when --speed is omitted")
     parser.add_argument("--max-frames", type=int, default=10, help="maximum GIF/video frames to send, 1..255")
-    parser.add_argument("--size", type=int, default=None, help="square output size; defaults to 128 for images, 64 for GIF/video")
+    parser.add_argument("--size", type=int, default=None, help="square output size; defaults to 128")
+    parser.add_argument(
+        "--full-screen",
+        action="store_true",
+        help=f"use the full {send_divoom_image.PANEL_WIDTH}x{send_divoom_image.PANEL_HEIGHT} panel instead of a square crop",
+    )
     parser.add_argument("--start", type=float, default=None, help="video start time in seconds")
     parser.add_argument("--duration", type=float, default=None, help="video duration limit in seconds")
     parser.add_argument("--brightness", type=float, default=0.0, help="ffmpeg eq brightness, e.g. 0.15")
@@ -56,14 +61,19 @@ def main() -> int:
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     is_video = args.media.suffix.lower() in send_divoom_image.VIDEO_SUFFIXES
-    size = args.size if args.size is not None else (64 if is_video else 128)
+    if args.full_screen:
+        width, height = send_divoom_image.PANEL_WIDTH, send_divoom_image.PANEL_HEIGHT
+    else:
+        size = args.size if args.size is not None else 128
+        width = height = size
     speed = send_divoom_image._speed_from_args(args.speed, args.fps if is_video else None, 1000)
     payload, preview, meta = send_divoom_image.build_media_payload(
         args.media,
         speed=speed,
         level=args.zstd_level,
         window_log=args.zstd_window_log,
-        size=size,
+        width=width,
+        height=height,
         fps=args.fps if is_video else None,
         max_frames=args.max_frames,
         start=args.start if is_video else None,
@@ -78,7 +88,9 @@ def main() -> int:
 
     stem = args.media.stem
     preview.save(args.out_dir / f"{stem}-preview-128.png")
-    preview.resize((512, 512), send_divoom_image.Image.Resampling.NEAREST).save(args.out_dir / f"{stem}-preview-4x.png")
+    preview.resize((preview.width * 4, preview.height * 4), send_divoom_image.Image.Resampling.NEAREST).save(
+        args.out_dir / f"{stem}-preview-4x.png"
+    )
     payload_path = args.out_dir / f"{stem}-payload.bin"
     packet_path = args.out_dir / f"{stem}-packets-lenpref.bin"
     payload_path.write_bytes(payload)
@@ -89,7 +101,7 @@ def main() -> int:
 
     print(f"media={args.media}")
     print(
-        f"kind={meta['kind']} frames={meta['frames']} size={meta['size']} speed={meta['speed']} "
+        f"kind={meta['kind']} frames={meta['frames']} width={meta['width']} height={meta['height']} speed={meta['speed']} "
         f"payload={payload_path} len={len(payload)} zstd_len={meta['zstd_len']}"
     )
     print(f"packets={packet_path} count={len(packets)} bytes={sum(map(len, packets))}")

@@ -47,30 +47,49 @@ def frame(cmd: int, body: bytes = b"") -> bytes:
     return bytes(out)
 
 
-def _normalize_size(size: int) -> int:
-    if size <= 0 or size % 16 != 0 or size > 128:
-        raise ValueError("size must be a positive multiple of 16 up to 128")
-    return size
+# Physical panel is 160 wide x 128 tall (confirmed on real hardware; the
+# device's own 16px block-addressing units are 10 cols x 8 rows). Square
+# 128x128 sends (the default, matching the original captured Android
+# payload) simply use fewer columns than the panel has.
+PANEL_WIDTH = 160
+PANEL_HEIGHT = 128
 
 
-def _center_crop_resize(src: Image.Image, size: int) -> Image.Image:
+def _normalize_dims(width: int, height: int) -> tuple[int, int]:
+    if width <= 0 or width % 16 != 0 or width > PANEL_WIDTH:
+        raise ValueError(f"width must be a positive multiple of 16 up to {PANEL_WIDTH}")
+    if height <= 0 or height % 16 != 0 or height > PANEL_HEIGHT:
+        raise ValueError(f"height must be a positive multiple of 16 up to {PANEL_HEIGHT}")
+    return width, height
+
+
+def _cover_resize(src: Image.Image, width: int, height: int) -> Image.Image:
     src = ImageOps.exif_transpose(src).convert("RGB")
-    # Match app UX: center-crop square, then resize to the Divoom block grid.
-    side = min(src.size)
-    left = (src.width - side) // 2
-    top = (src.height - side) // 2
-    return src.crop((left, top, left + side, top + side)).resize((size, size), Image.Resampling.LANCZOS)
+    # Center-crop to the target aspect ratio, then resize to the Divoom
+    # block grid — same idea as the original square-only center-crop, just
+    # aspect-ratio-aware so it also works for the non-square full panel.
+    dst_ratio = width / height
+    src_ratio = src.width / src.height
+    if src_ratio > dst_ratio:
+        new_width = round(src.height * dst_ratio)
+        left = (src.width - new_width) // 2
+        box = (left, 0, left + new_width, src.height)
+    else:
+        new_height = round(src.width / dst_ratio)
+        top = (src.height - new_height) // 2
+        box = (0, top, src.width, top + new_height)
+    return src.crop(box).resize((width, height), Image.Resampling.LANCZOS)
 
 
 def _animation_payload(
-    raw_frames: list[bytes], *, size: int, speed: int, level: int, window_log: int | None = 17
+    raw_frames: list[bytes], *, width: int, height: int, speed: int, level: int, window_log: int | None = 17
 ) -> bytes:
     if not raw_frames:
         raise ValueError("at least one frame is required")
     if len(raw_frames) > 255:
         raise ValueError("Divoom animation frame count is one byte; use <= 255 frames")
-    size = _normalize_size(size)
-    frame_len = size * size * 3
+    width, height = _normalize_dims(width, height)
+    frame_len = width * height * 3
     for i, raw in enumerate(raw_frames):
         if len(raw) != frame_len:
             raise ValueError(f"frame {i} has {len(raw)} bytes, expected {frame_len}")
@@ -88,18 +107,28 @@ def _animation_payload(
         )
     zbytes = compressor.compress(raw)
 
-    blocks = size // 16
+    row_blocks = height // 16
+    col_blocks = width // 16
     # From W2.c.f(): marker/frame/speed/rows/cols + big-endian compressed length + zstd frame.
-    header = bytes([0x25, len(raw_frames)]) + u16be(speed) + bytes([blocks, blocks]) + u32be(len(zbytes))
+    # Row/col block order confirmed on real hardware with an asymmetric
+    # (non-square) grid, not just the square case this used to be limited to.
+    header = bytes([0x25, len(raw_frames)]) + u16be(speed) + bytes([row_blocks, col_blocks]) + u32be(len(zbytes))
     return header + zbytes
 
 
 def build_payload(
-    image_path: Path, speed: int = 1000, level: int = 17, size: int = 128, window_log: int | None = 17
+    image_path: Path,
+    speed: int = 1000,
+    level: int = 17,
+    width: int = 128,
+    height: int = 128,
+    window_log: int | None = 17,
 ) -> tuple[bytes, Image.Image]:
-    size = _normalize_size(size)
-    img = _center_crop_resize(Image.open(image_path), size)
-    payload = _animation_payload([img.tobytes("raw", "RGB")], size=size, speed=speed, level=level, window_log=window_log)
+    width, height = _normalize_dims(width, height)
+    img = _cover_resize(Image.open(image_path), width, height)
+    payload = _animation_payload(
+        [img.tobytes("raw", "RGB")], width=width, height=height, speed=speed, level=level, window_log=window_log
+    )
     return payload, img
 
 
@@ -108,7 +137,8 @@ def build_video_payload(
     *,
     speed: int,
     level: int = 17,
-    size: int = 128,
+    width: int = 128,
+    height: int = 128,
     fps: float | None = None,
     max_frames: int = 60,
     window_log: int | None = 17,
@@ -120,7 +150,7 @@ def build_video_payload(
     posterize_bits: int | None = None,
     sharpen: float = 1.0,
 ) -> tuple[bytes, Image.Image, dict[str, int | float]]:
-    size = _normalize_size(size)
+    width, height = _normalize_dims(width, height)
     if max_frames <= 0 or max_frames > 255:
         raise ValueError("max_frames must be in the range 1..255")
 
@@ -148,8 +178,8 @@ def build_video_payload(
         vf_parts.append(f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}")
     vf_parts.extend(
         [
-            f"scale={size}:{size}:force_original_aspect_ratio=increase",
-            f"crop={size}:{size}",
+            f"scale={width}:{height}:force_original_aspect_ratio=increase",
+            f"crop={width}:{height}",
         ]
     )
     cmd = [
@@ -183,7 +213,7 @@ def build_video_payload(
         err = proc.stderr.decode(errors="replace").strip()
         raise RuntimeError(f"ffmpeg failed: {err}")
 
-    frame_len = size * size * 3
+    frame_len = width * height * 3
     if len(proc.stdout) < frame_len:
         raise RuntimeError("ffmpeg produced no complete video frames")
     frame_count = len(proc.stdout) // frame_len
@@ -191,7 +221,7 @@ def build_video_payload(
     raw_frames: list[bytes] = []
     preview: Image.Image | None = None
     for i in range(frame_count):
-        img = Image.frombytes("RGB", (size, size), raw[i * frame_len : (i + 1) * frame_len])
+        img = Image.frombytes("RGB", (width, height), raw[i * frame_len : (i + 1) * frame_len])
         if posterize_bits is not None and posterize_bits < 8:
             img = ImageOps.posterize(img, posterize_bits)
         if sharpen != 1.0:
@@ -200,10 +230,11 @@ def build_video_payload(
             preview = img.copy()
         raw_frames.append(img.tobytes("raw", "RGB"))
     assert preview is not None
-    payload = _animation_payload(raw_frames, size=size, speed=speed, level=level, window_log=window_log)
+    payload = _animation_payload(raw_frames, width=width, height=height, speed=speed, level=level, window_log=window_log)
     meta: dict[str, int | float] = {
         "frames": frame_count,
-        "size": size,
+        "width": width,
+        "height": height,
         "speed": speed,
         "zstd_len": int.from_bytes(payload[6:10], "big"),
     }
@@ -231,7 +262,8 @@ def build_media_payload(
     *,
     speed: int,
     level: int = 17,
-    size: int = 128,
+    width: int = 128,
+    height: int = 128,
     fps: float | None = None,
     max_frames: int = 60,
     window_log: int | None = 17,
@@ -248,7 +280,8 @@ def build_media_payload(
             path,
             speed=speed,
             level=level,
-            size=size,
+            width=width,
+            height=height,
             fps=fps,
             max_frames=max_frames,
             window_log=window_log,
@@ -263,8 +296,15 @@ def build_media_payload(
         meta: dict[str, int | float | str] = dict(video_meta)
         meta["kind"] = "video"
         return payload, preview, meta
-    payload, preview = build_payload(path, speed=speed, level=level, size=size, window_log=window_log)
-    return payload, preview, {"kind": "image", "frames": 1, "size": size, "speed": speed, "zstd_len": int.from_bytes(payload[6:10], "big")}
+    payload, preview = build_payload(path, speed=speed, level=level, width=width, height=height, window_log=window_log)
+    return payload, preview, {
+        "kind": "image",
+        "frames": 1,
+        "width": width,
+        "height": height,
+        "speed": speed,
+        "zstd_len": int.from_bytes(payload[6:10], "big"),
+    }
 
 
 def build_packets(payload: bytes) -> list[bytes]:
@@ -353,7 +393,10 @@ def main() -> int:
     parser.add_argument("--speed", type=int, default=None, help="frame duration in milliseconds; default 1000 for images or derived from --fps for video")
     parser.add_argument("--fps", type=float, default=6.0, help="video sampling fps; also derives speed when --speed is omitted")
     parser.add_argument("--max-frames", type=int, default=10, help="maximum video frames to send, 1..255")
-    parser.add_argument("--size", type=int, default=None, help="square output size; defaults to 128 for images, 64 for video")
+    parser.add_argument("--size", type=int, default=None, help="square output size; defaults to 128")
+    parser.add_argument(
+        "--full-screen", action="store_true", help=f"use the full {PANEL_WIDTH}x{PANEL_HEIGHT} panel instead of a square crop"
+    )
     parser.add_argument("--start", type=float, default=None, help="video start time in seconds")
     parser.add_argument("--duration", type=float, default=None, help="video duration limit in seconds")
     parser.add_argument("--brightness", type=float, default=0.0, help="ffmpeg eq brightness, e.g. 0.15")
@@ -370,14 +413,19 @@ def main() -> int:
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     is_video = args.media.suffix.lower() in VIDEO_SUFFIXES
-    size = args.size if args.size is not None else (64 if is_video else 128)
+    if args.full_screen:
+        width, height = PANEL_WIDTH, PANEL_HEIGHT
+    else:
+        size = args.size if args.size is not None else 128
+        width = height = size
     speed = _speed_from_args(args.speed, args.fps if is_video else None, 1000)
     payload, preview, meta = build_media_payload(
         args.media,
         speed=speed,
         level=args.zstd_level,
         window_log=args.zstd_window_log,
-        size=size,
+        width=width,
+        height=height,
         fps=args.fps if is_video else None,
         max_frames=args.max_frames,
         start=args.start if is_video else None,
@@ -392,12 +440,12 @@ def main() -> int:
 
     stem = args.media.stem
     preview.save(args.out_dir / f"{stem}-preview-128.png")
-    preview.resize((512, 512), Image.Resampling.NEAREST).save(args.out_dir / f"{stem}-preview-4x.png")
+    preview.resize((preview.width * 4, preview.height * 4), Image.Resampling.NEAREST).save(args.out_dir / f"{stem}-preview-4x.png")
     (args.out_dir / f"{stem}-payload.bin").write_bytes(payload)
     (args.out_dir / f"{stem}-packets.bin").write_bytes(b"".join(packets))
 
     print(
-        f"kind={meta['kind']} frames={meta['frames']} size={meta['size']} speed={meta['speed']} "
+        f"kind={meta['kind']} frames={meta['frames']} width={meta['width']} height={meta['height']} speed={meta['speed']} "
         f"payload_len={len(payload)} zstd_len={meta['zstd_len']} packets={len(packets)}"
     )
     print(f"start={packets[0].hex()}")

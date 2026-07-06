@@ -36,6 +36,12 @@ final class ControlCenterModel: ObservableObject {
     @Published var summary: String = ""
     @Published var status: String = "Choose an image, GIF, or video to preview it before sending."
     @Published var isBusy: Bool = false
+    @Published var fullScreen: Bool = false {
+        didSet {
+            guard let mediaURL else { return }
+            buildPreview(for: mediaURL)
+        }
+    }
     private var packetsPath: URL?
 
     init(app: DivoomMenuBar) {
@@ -59,11 +65,14 @@ final class ControlCenterModel: ObservableObject {
         previewImage = nil
         packetsPath = nil
         summary = ""
+        let wantsFullScreen = fullScreen
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let py = self.app.pythonExecutable()
             let script = self.app.toolRoot.appendingPathComponent("divoom_send.py").path
-            let (code, out) = self.app.run(py, [script, url.path, "--build-only", "--out-dir", self.app.capturesDir.path])
+            var args = [script, url.path, "--build-only", "--out-dir", self.app.capturesDir.path]
+            if wantsFullScreen { args.append("--full-screen") }
+            let (code, out) = self.app.run(py, args)
             DispatchQueue.main.async {
                 self.isBusy = false
                 guard code == 0 else {
@@ -106,6 +115,7 @@ final class ControlCenterModel: ObservableObject {
         }
         isBusy = true
         status = "Sending…"
+        let wantsFullScreen = fullScreen
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             // The preview build already ran once for display; re-running the
@@ -115,7 +125,9 @@ final class ControlCenterModel: ObservableObject {
             // re-encoding — cheap relative to the multi-second BT transfer.
             let py = self.app.pythonExecutable()
             let script = self.app.toolRoot.appendingPathComponent("divoom_send.py").path
-            let (code, out) = self.app.run(py, [script, mediaURL.path, "--out-dir", self.app.capturesDir.path])
+            var args = [script, mediaURL.path, "--out-dir", self.app.capturesDir.path]
+            if wantsFullScreen { args.append("--full-screen") }
+            let (code, out) = self.app.run(py, args)
             DispatchQueue.main.async {
                 self.isBusy = false
                 self.status = code == 0 ? "Sent to device." : "Send issue: \(String(out.suffix(500)))"
@@ -155,6 +167,10 @@ struct SendMediaView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
+                    Toggle("Full Screen (160×128)", isOn: $model.fullScreen)
+                        .toggleStyle(.checkbox)
+                        .disabled(model.isBusy)
+                        .help("Use the panel's full rectangular resolution instead of a square center-crop.")
                     if !model.summary.isEmpty {
                         Text(model.summary).font(.caption).foregroundColor(.secondary)
                     }

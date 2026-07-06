@@ -213,23 +213,48 @@ Zstd details from the captured payload:
 - Dimensions: `128x128`
 - `128 * 128 * 3 = 49152`
 
+This was the size of one specific captured Android payload, not the panel's
+actual resolution — see "Full panel resolution" below.
+
+### Full panel resolution: 160x128, not 128x128
+
+The physical panel is **160 wide x 128 tall**, confirmed on real hardware.
+The row/column bytes in the header above are block counts in 16px units, not
+raw pixel dimensions — `08 08` is 8x8 blocks (128x128px), simply using fewer
+of the 10 available column-blocks than the panel has. Independent community
+testing ([bugzmanov/divoom-minitoo](https://github.com/bugzmanov/divoom-minitoo))
+confirmed 160x128 works over this same `0x8b` opcode using `08 0a` (8 row
+blocks x 10 col blocks) with their JPEG-per-frame variant; we independently
+confirmed the same asymmetric block count also works with our own
+zstd-raw-RGB variant (marker `0x25` below), live on hardware.
+
+Sending fewer columns than 160 does **not** letterbox or center — the
+firmware paints only the claimed block region starting at the top-left, so
+a square `128x128` send appears **left-justified** with the rightmost 32
+columns left showing whatever was on screen before. This is expected
+behavior of the block-addressing scheme, not a bug.
+
 ## Image conversion
 
 Current sender behavior for arbitrary images:
 
 1. EXIF transpose.
 2. Convert to RGB.
-3. Center-crop square.
-4. Resize to `128x128`.
+3. Center-crop to the target aspect ratio (square by default, or the full
+   160x128 panel aspect ratio with `--full-screen`).
+4. Resize to the target dimensions (`128x128` by default, `160x128` with
+   `--full-screen`).
 5. Use raw RGB888 bytes.
 6. Zstd-compress with level `17`.
 7. Prefix encoded payload header:
 
 ```text
-25 01 <speed_be16> 08 08 <zstd_len_be32> <zstd_frame>
+25 01 <speed_be16> <row_blocks> <col_blocks> <zstd_len_be32> <zstd_frame>
 ```
 
-Then wrap into `0x8b` start + chunks.
+`row_blocks`/`col_blocks` are height/width in 16px units — `08 08` for the
+default square `128x128`, `08 0a` for the full `160x128` panel via
+`--full-screen`. Then wrap into `0x8b` start + chunks.
 
 ## GIF / video conversion
 
@@ -247,7 +272,9 @@ Where:
 - Expected decompressed length is `frame_count * width * height * 3`.
 - `frame_count` is one byte, so current tooling limits video/GIF sends to `<=255` frames.
 
-MP4/video support in `tools/divoom_send.py` shells out to `ffmpeg` to sample frames, center-crop square, resize, concatenate RGB888 frames, zstd-compress, and send through the same daemon path.
+MP4/video support in `tools/divoom_send.py` shells out to `ffmpeg` to sample frames, center-crop to the target aspect ratio (square by default, or 160x128 with `--full-screen`), resize, concatenate RGB888 frames, zstd-compress, and send through the same daemon path.
+
+`--size` (still images and video alike) defaults to `128` — video used to default to `64` from before the zstd-window fix below existed, back when smaller video was the safer bet; that default was stale and has been corrected, since `128x128` (and now `160x128` via `--full-screen`) works fine for video too.
 
 Example practical send:
 
@@ -283,6 +310,7 @@ Practical rules:
 - Do not activate a custom face after upload unless you intentionally want to switch away from the uploaded animation; doing so can make the animation appear only briefly.
 - Posterizing/noise reduction helps MP4-derived video compress more like phone GIFs. `posterize-bits=4` is fast/small; `posterize-bits=5` has better color but larger transfer.
 - More frames increase both duration and transfer time. A good balance is around `20` frames at `100ms` (`~2s`).
+- `--full-screen` (160x128, ~25% more pixels than 128x128) works for video/GIF too, hardware-confirmed; the profiles below were tuned at 128x128, so expect proportionally larger/slower transfers at full screen and adjust `--max-frames`/`--posterize-bits` down if needed.
 
 Balanced recommended profile:
 
@@ -502,7 +530,10 @@ Menu actions:
     return), rather than a tab bar. Screens:
     - **Send Media** — choose a PNG/JPEG/GIF/video, builds and shows a
       preview (via `divoom_send.py --build-only`) before committing to the
-      multi-second chunked upload, then "Send to Device".
+      multi-second chunked upload, then "Send to Device". A "Full Screen
+      (160×128)" checkbox switches from the default square `128x128`
+      center-crop to the panel's full rectangular resolution (see "Full
+      panel resolution" above) — toggling it rebuilds the preview.
     - **White Noise** — the 8 per-channel volume sliders plus a real on/off
       `Toggle` (replacing the old menu-only "off" item). Queries the
       device's actual current state (`WhiteNoise/Get`) on open, via a
