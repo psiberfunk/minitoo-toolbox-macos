@@ -95,7 +95,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var lastMessage = "Ready"
     var lastBrightness: Int = 100
 
-    let address = "B1:21:81:6F:4D:F0"
+    let address = "B1:21:81:B1:F0:84"
     let channel = "1"
     let daemonPort = "40583"
     var menuLog: URL { supportDir.appendingPathComponent("divoom-menubar.log") }
