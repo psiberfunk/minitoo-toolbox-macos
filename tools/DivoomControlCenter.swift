@@ -506,6 +506,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
     case whiteNoise
     case customFaces
     case photoAlbum
+    case atmosphere
 
     var id: String { rawValue }
 
@@ -515,6 +516,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
         case .whiteNoise: return "White Noise"
         case .customFaces: return "Custom Faces"
         case .photoAlbum: return "Photo Album"
+        case .atmosphere: return "Atmosphere"
         }
     }
 
@@ -524,6 +526,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
         case .whiteNoise: return "waveform"
         case .customFaces: return "square.stack.3d.up"
         case .photoAlbum: return "photo.stack"
+        case .atmosphere: return "square.grid.3x3.fill"
         }
     }
 }
@@ -719,6 +722,136 @@ struct PhotoAlbumView: View {
     }
 }
 
+/// Native builder/sender for Lyric/Enter + Lyric/SetConfig -- the
+/// Atmosphere screen's background/text-effect selector, decoded from a
+/// real BT capture rather than APK tracing (see PROTOCOL.md's Atmosphere
+/// section). Background is a 0-indexed slot in the app's ~21-entry grid;
+/// TextEffect is a separate 0-5 overlay ("Text effects"/"Mixing" in the
+/// official app, 0 = off). Which index renders which specific visual isn't
+/// decoded yet -- this screen exposes the raw indices as numbered buttons
+/// rather than guessing at labels.
+final class AtmosphereModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+    static let backgroundCount = 21
+    static let textEffectCount = 6
+
+    @Published var selectedBackground: Int = 0
+    @Published var selectedTextEffect: Int = 0
+    @Published var status: String = "Choose a background."
+    @Published var isBusy: Bool = false
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+    }
+
+    private func enterPacket() -> Data {
+        let job: [String: Any] = [
+            "Command": "Lyric/Enter",
+            "DeviceId": 600111083,
+            "Token": 1777741943,
+            "UserId": 404779143,
+        ]
+        let body = (try? JSONSerialization.data(withJSONObject: job)) ?? Data()
+        return DivoomRawFrame.build(cmd: 0x01, body: body)
+    }
+
+    private func setConfigPacket(background: Int, textEffect: Int) -> Data {
+        let job: [String: Any] = [
+            "Background": background,
+            "Command": "Lyric/SetConfig",
+            "DeviceId": 600111083,
+            "TextEffect": textEffect,
+            "Token": 1777741943,
+            "UserId": 404779143,
+        ]
+        let body = (try? JSONSerialization.data(withJSONObject: job)) ?? Data()
+        return DivoomRawFrame.build(cmd: 0x01, body: body)
+    }
+
+    func selectBackground(_ index: Int) {
+        selectedBackground = index
+        apply()
+    }
+
+    func selectTextEffect(_ index: Int) {
+        selectedTextEffect = index
+        apply()
+    }
+
+    // Sends Lyric/Enter ahead of every SetConfig, same as the official app's
+    // own capture -- there's no confirmation the device stays in the
+    // Atmosphere view across a full round trip, so this doesn't assume it.
+    private func apply() {
+        isBusy = true
+        status = "Sending…"
+        let packets = [enterPacket(), setConfigPacket(background: selectedBackground, textEffect: selectedTextEffect)]
+        let path = DivoomRawFrame.writePacketsFile(packets, name: "atmosphere-set", in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                let hardFailure = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                let effectLabel = self.selectedTextEffect == 0 ? "off" : "\(self.selectedTextEffect)"
+                self.status = hardFailure ? "Atmosphere issue: \(result)" : "Background \(self.selectedBackground), effect \(effectLabel)."
+            }
+        }
+    }
+}
+
+struct AtmosphereView: View {
+    @ObservedObject var model: AtmosphereModel
+    private let backgroundColumns = Array(repeating: GridItem(.fixed(40), spacing: 8), count: 7)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Atmosphere").font(.headline)
+            Text("Selects one of the built-in animated backgrounds. Index-only for now — which number is which visual isn't decoded yet, so cross-check against the device.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Text("Background").font(.subheadline)
+            LazyVGrid(columns: backgroundColumns, spacing: 8) {
+                ForEach(0..<AtmosphereModel.backgroundCount, id: \.self) { index in
+                    Button(action: { model.selectBackground(index) }) {
+                        Text("\(index)")
+                            .frame(width: 40, height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(model.selectedBackground == index ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.12))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isBusy)
+                }
+            }
+
+            Text("Text Effect (Mixing)").font(.subheadline)
+            HStack(spacing: 8) {
+                ForEach(0..<AtmosphereModel.textEffectCount, id: \.self) { index in
+                    Button(action: { model.selectTextEffect(index) }) {
+                        Text(index == 0 ? "Off" : "\(index)")
+                            .frame(width: 40, height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(model.selectedTextEffect == index ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.12))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isBusy)
+                }
+            }
+
+            HStack(spacing: 8) {
+                if model.isBusy {
+                    ProgressView().controlSize(.small)
+                }
+                Text(model.status).font(.caption).foregroundColor(.secondary)
+            }
+        }
+        .padding(20)
+    }
+}
+
 struct ControlCenterView: View {
     @ObservedObject var sendModel: ControlCenterModel
     @ObservedObject var whiteNoiseModel: WhiteNoiseModel
@@ -726,6 +859,7 @@ struct ControlCenterView: View {
     @ObservedObject var deviceControlsModel: DeviceControlsModel
     @ObservedObject var batteryMonitor: BatteryMonitorModel
     @ObservedObject var photoAlbumModel: PhotoAlbumModel
+    @ObservedObject var atmosphereModel: AtmosphereModel
     @State private var selection: ControlCenterFunction?
 
     var body: some View {
@@ -795,6 +929,7 @@ struct ControlCenterView: View {
         case .whiteNoise: WhiteNoiseView(model: whiteNoiseModel)
         case .customFaces: CustomFacesView(model: customFacesModel)
         case .photoAlbum: PhotoAlbumView(model: photoAlbumModel)
+        case .atmosphere: AtmosphereView(model: atmosphereModel)
         }
     }
 }
@@ -814,7 +949,9 @@ extension DivoomMenuBar {
             self.deviceControlsModel = deviceControlsModel
             let photoAlbumModel = PhotoAlbumModel(app: self)
             self.photoAlbumModel = photoAlbumModel
-            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor, photoAlbumModel: photoAlbumModel))
+            let atmosphereModel = AtmosphereModel(app: self)
+            self.atmosphereModel = atmosphereModel
+            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor, photoAlbumModel: photoAlbumModel, atmosphereModel: atmosphereModel))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Divoom Control Center"
             window.styleMask = [.titled, .closable, .miniaturizable]

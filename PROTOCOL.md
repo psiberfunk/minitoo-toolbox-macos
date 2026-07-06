@@ -546,6 +546,10 @@ Menu actions:
       into the device's *persistent* on-device photo gallery (see "Photo
       Album" section below), distinct from Send Media's live/ephemeral
       push. No album/ID selection needed; the device has one flat gallery.
+    - **Atmosphere** — a grid of 21 numbered background buttons plus 6
+      text-effect buttons (see "Atmosphere" section below); selecting either
+      sends `Lyric/Enter` + `Lyric/SetConfig` natively (no Python
+      subprocess), same fast-path pattern as brightness/white noise.
   - Each screen resizes the window to its own actual measured content size
     (a `GeometryReader`-based mechanism, not hand-picked constants).
 - Brightness slider
@@ -946,3 +950,53 @@ the standing project preference for this technique over APK tracing.
 6. The MiniToo's Bluetooth link is fragile to multiple nearby devices
    competing for it — keep every other device's Bluetooth off during the
    capture session.
+
+## Atmosphere (animated background selector)
+
+The app's "Atmosphere" screen: a grid of ~21 selectable animated/static
+backgrounds (VU meters, waveforms, spectrum circles, starfields, cityscapes,
+etc.), plus a separate row of "Text effects" ("Mixing" in the app's UI) that
+overlay something on top of the chosen background. Decoded from a real BT
+HCI snoop capture (same methodology as Photo Album above) of the official
+app selecting a spread of backgrounds and all 6 text-effect options.
+
+### Protocol
+
+Three JSON commands, all opcode `0x01`, no binary transfer involved at all
+— much simpler than Photo Album:
+
+- `{"Command":"Lyric/Enter","DeviceId":...,"Token":...,"UserId":...}` —
+  switches the device into the Atmosphere view.
+- `{"Command":"Lyric/GetConfig","DeviceId":...,"Token":...,"UserId":...}` —
+  queries current config (reply format not decoded — the capture only
+  showed the app sending this, no readable JSON reply on the wire the way
+  `WhiteNoise/Get` has one; treat as fire-and-forget for now).
+- `{"Background":<int>,"Command":"Lyric/SetConfig","DeviceId":...,
+  "TextEffect":<int>,"Token":...,"UserId":...}` — selects a background and a
+  text effect. `Background` is 0-indexed into the grid (0-20 observed across
+  15 captured selections spanning that full range, confirming ~21 total
+  entries). `TextEffect` is 0-5 (0 = off, confirmed by capturing all 6
+  values back-to-back at a fixed `Background`). Both fields vary
+  independently and take effect immediately with no other fields required.
+
+**Not yet decoded:** which `Background` index renders which specific visual
+in the grid, and what each `TextEffect` value actually looks like. The
+capture gives indices, not labels — confirm on real hardware before
+assuming a specific number means a specific background.
+
+### Implementation
+
+`tools/divoom_atmosphere.py` — CLI with `enter`, `get`, and
+`set --background N [--text-effect N]` subcommands, same
+build/write-packets/submit pattern as the other `tools/divoom_*.py` scripts.
+Also wired natively into Control Center as an "Atmosphere" screen
+(`AtmosphereModel`/`AtmosphereView` in `DivoomControlCenter.swift`): a
+7-column grid of 21 numbered background buttons plus a row of 6 text-effect
+buttons, each tap sending `Lyric/Enter` + `Lyric/SetConfig` as one native
+`DivoomRawFrame` job (no Python subprocess) for a snappy feel, mirroring the
+white-noise screen's fast-path pattern. Since the index-to-visual mapping
+isn't decoded, the UI just shows plain numbers rather than guessed names or
+thumbnails. **Not yet hardware-tested** — built and validated at the
+packet-encoding level (byte-for-byte match against the capture) while the
+Mac was intentionally left disconnected from the MiniToo for the capture
+session; needs a real device test before considering this done.

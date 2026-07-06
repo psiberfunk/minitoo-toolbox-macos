@@ -27,12 +27,21 @@ enum DivoomRawFrame {
     }
 
     static func writePacketsFile(_ packet: Data, name: String, in dir: URL) -> URL {
+        writePacketsFile([packet], name: name, in: dir)
+    }
+
+    /// Multi-frame variant (e.g. a "Foo/Enter" frame followed by a
+    /// "Foo/SetConfig" frame in the same job), same length-prefixed layout
+    /// send_divoom_image.py's write_packets uses.
+    static func writePacketsFile(_ packets: [Data], name: String, in dir: URL) -> URL {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let path = dir.appendingPathComponent("\(name)-packets-lenpref.bin")
         var out = Data()
-        out.append(UInt8(packet.count & 0xFF))
-        out.append(UInt8((packet.count >> 8) & 0xFF))
-        out.append(packet)
+        for packet in packets {
+            out.append(UInt8(packet.count & 0xFF))
+            out.append(UInt8((packet.count >> 8) & 0xFF))
+            out.append(packet)
+        }
         try? out.write(to: path)
         return path
     }
@@ -89,6 +98,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var customFacesModel: CustomFacesModel?
     var deviceControlsModel: DeviceControlsModel?
     var photoAlbumModel: PhotoAlbumModel?
+    var atmosphereModel: AtmosphereModel?
     var preferencesWindow: NSWindow?
     var preferencesModel: PreferencesModel?
     let batteryMonitor = BatteryMonitorModel()
