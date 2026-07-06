@@ -114,6 +114,13 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         get { UserDefaults.standard.string(forKey: "DeviceAddress") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "DeviceAddress") }
     }
+    // Cached alongside the address (from the scan result, or a best-effort
+    // blueutil lookup for manual entry) purely for display — never used to
+    // address the device, since the daemon only ever needs the MAC.
+    var deviceName: String {
+        get { UserDefaults.standard.string(forKey: "DeviceName") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "DeviceName") }
+    }
     let channel = "1"
     let daemonPort = "40583"
     var menuLog: URL { supportDir.appendingPathComponent("divoom-menubar.log") }

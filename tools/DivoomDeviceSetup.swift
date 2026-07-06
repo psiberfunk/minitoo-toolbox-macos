@@ -106,7 +106,7 @@ final class DeviceSetupModel: ObservableObject {
     }
 
     func choose(_ device: DiscoveredDevice) {
-        commit(address: device.address, alreadyPaired: device.paired)
+        commit(address: device.address, name: device.name, alreadyPaired: device.paired)
     }
 
     func chooseManual() {
@@ -115,10 +115,10 @@ final class DeviceSetupModel: ObservableObject {
             statusText = "That doesn't look like a valid MAC address (expected e.g. B1:21:81:6F:4D:F0)."
             return
         }
-        commit(address: normalized, alreadyPaired: false)
+        commit(address: normalized, name: nil, alreadyPaired: false)
     }
 
-    private func commit(address: String, alreadyPaired: Bool) {
+    private func commit(address: String, name: String?, alreadyPaired: Bool) {
         isWorking = true
         statusText = alreadyPaired ? "Using already-paired device…" : "Pairing…"
         DispatchQueue.global(qos: .userInitiated).async { [app] in
@@ -128,10 +128,22 @@ final class DeviceSetupModel: ObservableObject {
             if !alreadyPaired, let blueutil = app.executablePath("blueutil") {
                 _ = app.run(blueutil, ["--pair", address], wait: true)
             }
+            // Manual entry doesn't come with a name from the scan list —
+            // look it up the same way the scan does rather than leaving it
+            // blank.
+            var resolvedName = name
+            if resolvedName == nil, let blueutil = app.executablePath("blueutil") {
+                let (_, infoOut) = app.run(blueutil, ["--info", address, "--format", "json"], wait: true)
+                if let data = infoOut.data(using: .utf8),
+                   let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    resolvedName = dict["name"] as? String
+                }
+            }
             DispatchQueue.main.async {
                 self.app.address = address
+                self.app.deviceName = resolvedName ?? ""
                 self.isWorking = false
-                self.statusText = "Device set to \(address)."
+                self.statusText = "Device set to \(resolvedName ?? address)."
                 self.onComplete?()
             }
         }

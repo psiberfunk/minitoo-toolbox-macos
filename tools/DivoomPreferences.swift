@@ -189,6 +189,7 @@ final class PreferencesModel: ObservableObject {
     unowned let app: DivoomMenuBar
 
     @Published var deviceAddress: String = ""
+    @Published var deviceName: String = ""
 
     @Published var showDockIcon: Bool {
         didSet {
@@ -218,10 +219,12 @@ final class PreferencesModel: ObservableObject {
         self.showBatteryStatus = UserDefaults.standard.bool(forKey: "ShowBatteryStatus")
         self.useBatteryPrivateAPI = UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI")
         self.deviceAddress = app.address
+        self.deviceName = app.deviceName
     }
 
-    func refreshDeviceAddress() {
+    func refreshDeviceInfo() {
         deviceAddress = app.address
+        deviceName = app.deviceName
     }
 
     private func restartBatteryMonitorIfNeeded() {
@@ -241,11 +244,17 @@ struct PreferencesView: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Device").font(.subheadline).bold()
-                Text(model.deviceAddress.isEmpty ? "Not set up yet" : model.deviceAddress)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(model.deviceAddress.isEmpty ? .secondary : .primary)
+                if model.deviceAddress.isEmpty {
+                    Text("Not set up yet").foregroundColor(.secondary)
+                } else {
+                    Text(model.deviceName.isEmpty ? "(unnamed device)" : model.deviceName)
+                        .font(.body)
+                    Text(model.deviceAddress)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
                 Button(model.deviceAddress.isEmpty ? "Set Up Device…" : "Change Device…") {
-                    model.app.openDeviceSetup { model.refreshDeviceAddress() }
+                    model.app.openDeviceSetup { model.refreshDeviceInfo() }
                 }
                 .padding(.top, 2)
             }
