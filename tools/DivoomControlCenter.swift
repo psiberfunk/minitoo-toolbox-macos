@@ -173,7 +173,6 @@ struct SendMediaView: View {
             }
         }
         .padding(20)
-        .sizesControlCenterWindow(model.app)
     }
 }
 
@@ -371,7 +370,6 @@ struct WhiteNoiseView: View {
             }
         }
         .padding(20)
-        .sizesControlCenterWindow(model.app)
         .onAppear {
             model.refresh()
             model.startAutoRefresh()
@@ -379,6 +377,85 @@ struct WhiteNoiseView: View {
         .onDisappear {
             model.stopAutoRefresh()
         }
+    }
+}
+
+/// Fast stateless toggles (brightness, screen on/off) that don't need their
+/// own drill-down screen — pinned to the top of every Control Center screen
+/// instead, per the same reasoning that used to keep them in the menu bar.
+/// Reuses DivoomMenuBar's existing native fast-path senders rather than
+/// duplicating the frame-building logic a third time.
+final class DeviceControlsModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+    @Published var brightness: Double
+    // No confirmed way to read either value back from the device (see
+    // brightnessChanged doc below), so this only ever reflects what *this
+    // app* last told the device, seeded from DivoomMenuBar's own last-known
+    // value — same limitation the old menu-bar slider had.
+    @Published var screenOn: Bool = true
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+        self.brightness = Double(app.lastBrightness)
+    }
+
+    // Dragging to 0 turns the screen off (mirrors how dim-to-black behaves
+    // elsewhere), and raising it back up implicitly means the user wants the
+    // screen back on — otherwise the slider would show e.g. 50% while the
+    // screen stayed dark with no visible explanation.
+    func brightnessChanged(_ value: Int) {
+        if value == 0 {
+            screenOn = false
+            app.setScreen(on: false)
+        } else if !screenOn {
+            screenOn = true
+            app.setScreen(on: true)
+        }
+        app.setBrightness(value)
+    }
+
+    func toggleScreen() {
+        screenOn.toggle()
+        app.setScreen(on: screenOn)
+    }
+}
+
+struct DeviceControlsBar: View {
+    @ObservedObject var model: DeviceControlsModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: { model.toggleScreen() }) {
+                Image(systemName: model.screenOn ? "power.circle.fill" : "power.circle")
+                    .font(.system(size: 18))
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(model.screenOn ? .accentColor : .secondary)
+            .help(model.screenOn ? "Turn screen off" : "Turn screen on")
+
+            Divider().frame(height: 16)
+
+            Image(systemName: "sun.max.fill")
+                .foregroundColor(.secondary)
+                .help("Brightness")
+            Slider(
+                value: Binding(
+                    get: { model.brightness },
+                    set: { model.brightness = $0 }
+                ),
+                in: 0...100,
+                onEditingChanged: { editing in
+                    if !editing { model.brightnessChanged(Int(model.brightness)) }
+                }
+            )
+            .frame(width: 130)
+            Text("\(Int(model.brightness))%")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(width: 32, alignment: .leading)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
     }
 }
 
@@ -456,7 +533,6 @@ struct CustomFacesView: View {
             }
         }
         .padding(20)
-        .sizesControlCenterWindow(model.app)
     }
 }
 
@@ -464,39 +540,49 @@ struct ControlCenterView: View {
     @ObservedObject var sendModel: ControlCenterModel
     @ObservedObject var whiteNoiseModel: WhiteNoiseModel
     @ObservedObject var customFacesModel: CustomFacesModel
+    @ObservedObject var deviceControlsModel: DeviceControlsModel
     @State private var selection: ControlCenterFunction?
 
     var body: some View {
-        Group {
-            if let selection {
-                VStack(alignment: .leading, spacing: 0) {
-                    Button(action: { self.selection = nil }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Functions")
+        VStack(alignment: .leading, spacing: 0) {
+            DeviceControlsBar(model: deviceControlsModel)
+            Divider()
+            Group {
+                if let selection {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Button(action: { self.selection = nil }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                Text("Functions")
+                            }
+                            // Padding goes *inside* the content shape so the
+                            // clickable area is bigger than the glyphs
+                            // themselves, not just their tight bounding box.
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 8)
+                            .contentShape(Rectangle())
                         }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.accentColor)
-                    .padding([.top, .horizontal], 14)
+                        .buttonStyle(.plain)
+                        .foregroundColor(.accentColor)
+                        .padding([.top, .horizontal], 8)
 
-                    detailView(for: selection)
-                }
-                // Without this, the VStack is only as wide as its widest
-                // child, so every time a status label changes length the
-                // *entire* block gets re-centered within the window — the
-                // whole screen visibly jitters, not just the status text.
-                // Anchoring to a fixed top-leading frame keeps everything's
-                // position stable regardless of how the status text's width
-                // fluctuates.
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else {
-                functionGrid
-                    .sizesControlCenterWindow(sendModel.app)
+                        detailView(for: selection)
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    functionGrid
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
             }
         }
+        // Measured once here, over the whole window's actual content (the
+        // device-controls bar plus whichever screen is showing) — a single
+        // source of truth instead of every screen resizing the window to
+        // just its own subtree and silently omitting this bar's height.
+        // Without this, every status label change still re-centers the
+        // *whole* screen if it's only as wide as its widest child — see the
+        // per-screen frame(alignment: .topLeading) calls above.
+        .sizesControlCenterWindow(sendModel.app)
     }
 
     private var functionGrid: some View {
@@ -538,7 +624,9 @@ extension DivoomMenuBar {
             self.whiteNoiseModel = whiteNoiseModel
             let customFacesModel = CustomFacesModel(app: self)
             self.customFacesModel = customFacesModel
-            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel))
+            let deviceControlsModel = DeviceControlsModel(app: self)
+            self.deviceControlsModel = deviceControlsModel
+            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Divoom Control Center"
             window.styleMask = [.titled, .closable, .miniaturizable]
