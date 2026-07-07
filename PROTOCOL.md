@@ -705,24 +705,6 @@ CLI:
 .venv/bin/python tools/divoom_display.py brightness 100
 ```
 
-## Device rename
-
-Opcode `0x75` (`SPP_SET_DEVICE_NAME`), verified byte-for-byte against a
-real capture:
-
-```text
-cmd  = 0x75
-body = <name_len_u8><utf8_name_bytes...>
-```
-
-Same raw single-opcode frame shape as brightness (`0x74`) — no JSON
-involved, and the device never sends a reply to this command.
-
-**Known unresolved issue:** on-device persistence of a new name has been
-unreliable in testing — the name doesn't always stick across
-reconnect/reboot. Protocol framing is confirmed; the persistence gap is
-not. Parked pending further investigation.
-
 ## Explored, not applicable to MiniToo: "screen dir cfg" / rotation
 
 `SppProc$EXT_CMD_TYPE.SPP_SECOND_SET_SCREEN_DIR_CFG` (`35`, sent via the
