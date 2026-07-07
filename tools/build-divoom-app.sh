@@ -33,6 +33,7 @@ cp "$TOOLS/divoom_send.py" "$RESOURCES/tools/divoom_send.py"
 cp "$TOOLS/divoom_clock.py" "$RESOURCES/tools/divoom_clock.py"
 cp "$TOOLS/send_divoom_image.py" "$RESOURCES/tools/send_divoom_image.py"
 cp "$ROOT/PROTOCOL.md" "$RESOURCES/PROTOCOL.md"
+cp "$ROOT/assets/AppIcon.icns" "$RESOURCES/AppIcon.icns"
 chmod +x "$MACOS/DivoomMiniToo" "$RESOURCES/tools/divoom-daemon"
 
 if [[ -x "$ROOT/.venv/bin/python" ]]; then
@@ -57,6 +58,8 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <string>en</string>
   <key>CFBundleExecutable</key>
   <string>DivoomMiniToo</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
   <string>local.divoom.minitoo</string>
   <key>CFBundleInfoDictionaryVersion</key>
