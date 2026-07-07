@@ -255,19 +255,19 @@ with the user — full detail (including the raw opcode) is in PROTOCOL.md's
   a packet capture. Unmeasured — would need a stopwatch against the real
   screen.
 
-### macOS-side idea: push Apple Music's live lyric line — feasibility only, not started
+### macOS-side idea: push Apple Music's live lyric line — Part 2 (AVRCP push) TESTED, macOS won't do it via system APIs (2026-07-07)
 
 User asked whether this app could hook Apple Music's currently-playing
 synced lyric line on macOS and push it to the MiniToo via the AVRCP
-mechanism above. Broken into two separate hard problems, neither
-attempted yet:
+mechanism above. Broken into two separate hard problems:
 
-1. **Reading the current synced lyric line out of Apple Music**: Apple
-   exposes no API for this at all. Music.app's AppleScript dictionary and
-   the private `MediaRemote.framework` (what NowPlaying-style menu-bar
-   utilities use) both give title/artist/elapsed-time, but not the
-   specific line Music.app's own Lyrics panel is currently highlighting.
-   Two candidate approaches, neither tried:
+1. **Reading the current synced lyric line out of Apple Music**: not
+   attempted this session, still open. Apple exposes no API for this at
+   all. Music.app's AppleScript dictionary and the private
+   `MediaRemote.framework` (what NowPlaying-style menu-bar utilities use)
+   both give title/artist/elapsed-time, but not the specific line
+   Music.app's own Lyrics panel is currently highlighting. Two candidate
+   approaches, neither tried:
    - **Accessibility-API screen-scraping** of Music.app's Lyrics view
      (same mechanism VoiceOver uses) — would read exactly what Apple's UI
      shows, but unsupported/fragile, could break on any macOS/Music.app
@@ -279,25 +279,136 @@ attempted yet:
      a third-party lyrics source actually having the track — and pulling
      copyrighted lyric text from a third-party API is worth a legal-
      awareness gut-check before building on it, even for personal use.
-2. **Pushing it to the MiniToo over AVRCP without breaking real
-   playback**: mechanically this means setting `MPNowPlayingInfoCenter`'s
-   title from our own app and forcing a fake "track changed" per line
-   (the same trailing-space trick seen in the capture). The real risk:
-   **Apple Music is already the app actually feeding audio to the MiniToo
-   over Bluetooth.** It's not obvious a background app can inject AVRCP
-   metadata without either fighting Music.app for the "current Now
-   Playing app" slot, or needing to run its own silent audio stream to
-   legitimately claim that slot — which risks visibly hijacking Control
-   Center's Now Playing widget or interfering with the actual audio
-   route. This half is the bigger unknown of the two and needs a careful,
-   real hardware test before trusting it with actual music playback.
 
-**Recommended starting point if this gets picked up**: prototype the
-`.lrc`/external-lyrics-source half first (sidesteps Accessibility-API
-fragility), but hardware-test the "claim Now Playing and push a test
-title" half in isolation before wiring the two together, since that's
-where an actual-audio-interruption risk lives. Nothing built yet — this
-is feasibility analysis only.
+2. **Pushing it to the MiniToo over AVRCP** — **tested directly this
+   session, negative result, root cause identified.** Three escalating
+   tests, all confirmed no visible change on the device (direct user
+   observation each time):
+   - A standalone Swift CLI binary setting `MPNowPlayingInfoCenter`'s
+     `nowPlayingInfo` with no real audio session.
+   - Same, but paired with a genuine (silent) audio stream via
+     `AVAudioEngine`, routed to the MiniToo as the actual default output
+     device (`SwitchAudioSource`, `brew install switchaudio-osx`) — ruling
+     out "no active audio route" as the cause.
+   - **Real Apple Music playback**, MiniToo set as the actual output
+     device. Also nothing. This ruled out "our process isn't a
+     legitimate media app" as the cause, since Music.app is about as
+     legitimate as it gets.
+
+   **Root cause, found via `log stream` (not a full packet capture —
+   see below for why), moderate-high confidence:** macOS has its own
+   proprietary Bluetooth Now-Playing-push mechanism —
+   `audioaccessoryd`'s `BTSmartRoutingDaemon`, function
+   `SendNowPlayingInfoUpdateToWx`. Captured while re-running the test:
+
+   ```
+   SendNowPlayingInfoUpdateToWx: 14:60:CB:BB:82:F6 ... BT_ERROR_NOT_CONNECTED
+   SendNowPlayingInfoUpdateToWx: C4:35:D9:1D:9C:2A ... BT_ERROR_NOT_CONNECTED
+   SendNowPlayingInfoUpdateToWx: BC:80:4E:AD:6C:DB ... BT_ERROR_NOT_CONNECTED
+   ```
+
+   All three addresses matched paired AirPods (pairing records logged
+   immediately above in the same stream). **The MiniToo's address never
+   appeared anywhere in 812 lines of log**, despite being the actively-
+   connected, actively-receiving-audio device at the time. So macOS
+   doesn't even attempt the standard AVRCP `GetElementAttributes` path
+   for a third-party accessory — its system-level "push Now Playing over
+   Bluetooth" feature is hardcoded (or at least filtered) to Apple's own
+   paired accessories only.
+
+   Reproduce: `log stream --style compact --predicate 'subsystem
+   CONTAINS "bluetooth" OR subsystem CONTAINS "avrcp" OR process
+   CONTAINS "bluetoothd" OR subsystem CONTAINS "MediaRemote" OR
+   subsystem CONTAINS "nowplaying"'`, then trigger any NowPlayingInfo
+   change while it's running.
+
+   **Why this is "moderate-high" not "confirmed", and why we stopped
+   chasing full proof**: this is one log correlation across one test
+   run, not a byte-level packet trace like the Android capture. We tried
+   to get a real macOS-side capture via PacketLogger (part of Apple's
+   "Additional Tools for Xcode") and hit a wall worth recording so it's
+   not re-attempted blind:
+   - PacketLogger recorded **zero** HCI/ACL packets even across a real,
+     verified Divoom-audio-profile disconnect/reconnect cycle (done via
+     the menu bar app's own Disconnect/Reconnect Audio items — real
+     Bluetooth events, confirmed by the app's own status line changing).
+   - Apple requires installing a separate diagnostics **configuration
+     profile** before PacketLogger can see internal-radio HCI traffic at
+     all (found via a forum post, then independently verified directly
+     against `developer.apple.com/bug-reporting/profiles-and-logs/`,
+     which really does host a `Bluetooth_macOS.mobileconfig` file plus
+     instructions PDF — this is real Apple-documented behavior, not a
+     rumor).
+   - The profile the user actually installed turned out to be the
+     **iOS** variant (`iOSBluetoothLogging.mobileconfig`) despite being
+     confident it was the macOS one — profile's own Description field
+     said "Enables full logging for Bluetooth and WirelessProximity on
+     **iOS**." Screenshot evidence over self-report here, per this
+     project's usual rule.
+   - Even the *correct* macOS profile may not have fixed it anyway: its
+     payload only configures `com.apple.system.logging` verbosity
+     (`Level: Debug` for the `com.apple.bluetooth` subsystem) — i.e. it
+     boosts `log stream`/`log show` detail, which is a **different**
+     Apple diagnostic mechanism than PacketLogger's raw kernel-level HCI
+     capture. Conflating the two cost real time this session.
+   - **Decision: dropped the PacketLogger chase.** The `log stream`
+     evidence above was obtained without any profile installed at all,
+     and answers the actual question well enough. Full packet-level
+     proof would be nice-to-have, not required to conclude this path is
+     a dead end via ordinary user-space APIs.
+
+**Bypass macOS's system AVRCP handling entirely and speak AVCTP/AVRCP
+ourselves — TESTED 2026-07-07, the open-channel half works.** Since the
+daemon already opens its own RFCOMM channel directly via `IOBluetooth`
+(bypassing any OS-level SPP abstraction — see "Current code layout"
+above), the same pattern applies here: `IOBluetoothDevice
+(addressString:).openL2CAPChannelSync(&ch, withPSM:, delegate:)` can
+open an arbitrary PSM directly, including PSM `0x17` (AVCTP, protocol ID
+`0x110E`, confirmed from the Android capture).
+
+Built a minimal standalone probe (`IOBluetoothDevice(addressString:
+"B1:21:81:6F:4D:F0").openL2CAPChannelSync(&ch, withPSM: 0x17,
+delegate:)`), packaged as a signed `.app` bundle with
+`NSBluetoothAlwaysUsageDescription` in its `Info.plist` — a **bare**
+Mach-O binary crashes immediately on any IOBluetooth call
+(`TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION`, confirmed via the crash's
+`.ips` report in `~/Library/Logs/DiagnosticReports/`); it must be a
+proper bundle, and must be launched via `open`/LaunchServices, not
+exec'd directly, or the same TCC crash recurs even with a correct
+`Info.plist` present. Resolved the "biggest open unknown" from before:
+
+- **Divoom audio profile connected** (macOS's own Bluetooth Audio stack
+  already owns the AVRCP channel for that connection): `openL2CAPChannelSync`
+  fails immediately, `ret=0xe00002bc` (`kIOReturnError`, generic IOKit
+  failure).
+- **Divoom audio profile disconnected first** (same precondition the
+  daemon already requires for RFCOMM — see `openRFCOMM()`'s error
+  message in `DivoomDaemon.swift`): **succeeds**, `ret=0x0`. And within
+  milliseconds, unprompted, the MiniToo pushed a real AVRCP
+  `GetCapabilities(EVENTS_SUPPORTED)` request over the new channel — see
+  PROTOCOL.md's `TextEffect`/lyric-text section for the full byte
+  decode. Same protocol, same Company ID (`0x001958`) as the Android
+  capture, confirmed independently against the Mac.
+
+**Tradeoff, not yet resolved**: this only works with audio disconnected
+— no real Mac-sourced audio plays through the MiniToo while our own
+AVCTP channel is open. Pushing custom text this way and playing real
+audio from the Mac at the same time are currently mutually exclusive;
+we never got to test whether that's a hard OS limitation or just needs
+a different sequencing (e.g. open our AVCTP channel first, *then* see
+if A2DP can still be separately negotiated afterward — untried).
+
+**Not yet built**: only received `GetCapabilities` so far — never sent
+a reply. To actually push custom title text, still need to: answer
+`GetCapabilities` (`EVENTS_SUPPORTED` bitmask including
+`TRACK_CHANGED`), answer `RegisterNotification(TRACK_CHANGED)` with
+`INTERIM` then later `CHANGED` when we want to push a new title, and
+answer `GetElementAttributes` with our own Title string — all modeled
+directly on the Android capture's decode in PROTOCOL.md. Zero brick
+risk — AVRCP/L2CAP is a generic Bluetooth Classic profile, unrelated to
+any Divoom opcode. Probe code lives only in scratch right now (not
+committed to the repo) — would need a proper home in `tools/` if this
+gets built out further.
 
 ## Legacy rescue, second pass
 `project_divoom_minitoo.md` (the old memory file) is being kept as an

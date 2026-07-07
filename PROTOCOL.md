@@ -1160,14 +1160,64 @@ full capture every time the app pushed a new value.
 
 **Implication for this project**: since this is standard AVRCP, not a
 Divoom-specific command, there is nothing new to add to `CmdManager`/the
-daemon's opcode set — no brick risk, no new opcode. A macOS
-implementation would need to (a) hold an active audio session so macOS's
-own Bluetooth stack answers `GetElementAttributes` at all, and (b) find
-what macOS's own AVRCP/`MPNowPlayingInfoCenter` layer treats as "new
-track" so it actually fires `TRACK_CHANGED` on each lyric-line push —
-untested so far, and not guaranteed to work identically to Android's
-stack. Not yet attempted; see `docs/local/status.md`/roadmap for next
-steps.
+daemon's opcode set — no brick risk, no new opcode.
+
+**macOS system APIs (`MPNowPlayingInfoCenter`) tested 2026-07-07 —
+negative, root cause confirmed**: bare metadata, metadata + a real
+silent `AVAudioEngine` stream routed to the MiniToo, and real Apple
+Music playback with the MiniToo as output all failed to show anything
+on-device. Root cause found via `log stream` (subsystem `bluetooth`):
+macOS's own Bluetooth Now-Playing-push mechanism
+(`audioaccessoryd`/`BTSmartRoutingDaemon`, function
+`SendNowPlayingInfoUpdateToWx`) only targets a fixed set of paired Apple
+accessories (this Mac's AirPods) — the MiniToo's address never appeared
+in the log at all. macOS doesn't even attempt the standard AVRCP path
+for third-party accessories via this mechanism.
+
+**But the MiniToo's own AVRCP client is directly reachable by bypassing
+macOS's system handling entirely — confirmed working 2026-07-07.**
+Using the same pattern the daemon already uses for RFCOMM
+(`IOBluetoothDevice(addressString:).openRFCOMMChannelSync` — see
+DivoomDaemon.swift), a minimal Swift probe called
+`IOBluetoothDevice(addressString:).openL2CAPChannelSync(&ch, withPSM:
+0x17, delegate:)` (PSM `0x17` = AVCTP):
+
+- **While the Divoom audio profile is connected** (macOS's own
+  Bluetooth Audio stack already owns the AVRCP L2CAP channel for that
+  connection): fails immediately, `IOReturn 0xe00002bc` (`kIOReturnError`,
+  IOKit's generic failure code — not a specific Bluetooth error).
+- **With the Divoom audio profile disconnected first** (same
+  precondition the daemon already requires for RFCOMM): **succeeds**,
+  `ret=0x0`. And within milliseconds, before anything was sent to it,
+  the MiniToo pushed a real unsolicited AVRCP request over the new
+  channel:
+
+  ```
+  10 11 0e 01 48 00 00 19 58 10 00 00 01 03
+  ```
+
+  Decoded: `10` AVCTP header (command, single packet) · `11 0e` Profile
+  ID `0x110E` (AVRCP) · `01` AV/C ctype `STATUS` · `48` subunit
+  PANEL/0 · `00` opcode VENDOR-DEPENDENT · `00 19 58` Company ID
+  `0x001958` (same Bluetooth SIG ID as the Android capture) · `10` PDU
+  `GetCapabilities` · `00` single packet · `00 01` 1-byte parameter ·
+  `03` CapabilityID `EVENTS_SUPPORTED`. That's the real opening
+  handshake of an AVRCP session — same protocol as the Android capture,
+  confirmed independently against the Mac.
+
+  **Tradeoff**: this only works with the OS-managed audio profile
+  disconnected, so no real Mac-sourced audio plays through the MiniToo
+  while it's active — pushing custom text this way and playing real
+  audio from the Mac at the same time are currently mutually exclusive.
+  Fine for a "push arbitrary text to the screen" feature independent of
+  real playback; not yet a solution for "show what Apple Music is
+  actually playing" while that audio is audible.
+
+  **Not yet built**: only `GetCapabilities` has been observed so far —
+  answering it plus `RegisterNotification`/`GetElementAttributes`
+  ourselves (to actually push custom title text) is real protocol
+  implementation work, still to do. See `docs/local/dev-notes.md`'s
+  "macOS-side idea" section for the play-by-play and next steps.
 
 **Confirmed by direct user observation (2026-07-07)**: the MiniToo only
 ever rendered the Title text on screen during this test — the Artist
