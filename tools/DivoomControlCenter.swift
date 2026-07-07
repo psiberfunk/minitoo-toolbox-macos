@@ -550,6 +550,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
     case customFaces
     case photoAlbum
     case atmosphere
+    case deviceSettings
 
     var id: String { rawValue }
 
@@ -560,6 +561,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
         case .customFaces: return "Custom Faces"
         case .photoAlbum: return "Photo Album"
         case .atmosphere: return "Atmosphere"
+        case .deviceSettings: return "Device Settings"
         }
     }
 
@@ -570,6 +572,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
         case .customFaces: return "square.stack.3d.up"
         case .photoAlbum: return "photo.stack"
         case .atmosphere: return "square.grid.3x3.fill"
+        case .deviceSettings: return "gearshape"
         }
     }
 }
@@ -1022,6 +1025,312 @@ struct AtmosphereView: View {
     }
 }
 
+// Miscellaneous device settings that all share one JSON command,
+// Sys/SetConf -- there's no per-setting opcode. Decoded from a real BT
+// capture (see PROTOCOL.md's "Device Settings" section): the official app
+// keeps one large local settings object and re-sends the *entire* thing
+// every time any single field changes. This model mirrors that: BASELINE
+// holds every field seen in the capture, and each setter overrides just
+// the one field the user touched before resending the whole object --
+// avoids clobbering fields this project doesn't understand (they read
+// like settings for other Divoom product lines sharing this same
+// command, same situation as the "screen dir cfg" opcode elsewhere in
+// PROTOCOL.md).
+//
+// No Sys/GetConf was ever observed in the capture -- the app never reads
+// the config back, it just trusts its own cached state -- so unlike White
+// Noise/Atmosphere there is no live device read-back here, only the
+// in-memory state this screen itself has sent.
+final class DeviceSettingsModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+
+    // Same placeholder DeviceId/DevicePassword/Token/UserId trio already
+    // used by every other JSON command in this codebase (Custom Faces,
+    // Atmosphere, White Noise, etc.) -- confirmed to work against this
+    // device, not tied to any real Divoom account.
+    static let baseline: [String: Any] = [
+        "AutoPowerOff": 0, "BluetoothAutoConnect": 0, "ColorTemp": 0,
+        "Command": "Sys/SetConf", "DateFormat": 0, "DeviceAutoUpdate": 1,
+        "DeviceId": 600111083, "DevicePassword": 1777733348, "DisableMic": 0,
+        "GyrateAngle": 0, "HighLight": 0, "Language": 0, "Latitude": 0.0,
+        "LcdImageArray": ["", "", "", "", ""], "LocationCityId": 0,
+        "LocationCityName": "", "LocationMode": 0, "LockScreenTime": 600,
+        "Longitude": 0.0, "MirrorFlag": 0, "NotificationSound": 30,
+        "OnOffVolume": 1, "ScreenProtection": 0, "ShowGrid1632": 1,
+        "StartupFileId": "", "TemperatureMode": 0, "Time24Flag": 1,
+        "TimeZoneMode": 0, "TimeZoneName": "", "TimeZoneValue": "",
+        "Token": 1777741943, "UserId": 404779143, "WhiteBalanceB": 100,
+        "WhiteBalanceG": 100, "WhiteBalanceR": 100, "Wind": 0,
+    ]
+
+    // Confirmed 2026-07-07 by cycling all six in order and reading the
+    // on-device labels directly.
+    static let dateFormatNames = ["yyyy-mm-dd", "dd-mm-yyyy", "mm-dd-yyyy", "yyyy.mm.dd", "dd.mm.yyyy", "mm.dd.yyyy"]
+    // Confirmed 2026-07-07 by cycling all six in order; the minute values
+    // are confirmed, on-screen labels for the non-zero entries weren't
+    // read directly so these are just the minute counts.
+    static let autoPowerOffMinutes = [0, 30, 60, 180, 360, 720]
+
+    @Published var notificationSound: Double
+    @Published var temperatureMode: Int
+    @Published var dateFormat: Int
+    @Published var time24: Int
+    @Published var bluetoothAutoConnect: Int
+    @Published var rememberPowerOnVolume: Int
+    @Published var autoPowerOff: Int
+    @Published var status: String = "Change a setting to send it to the device."
+    @Published var isBusy: Bool = false
+
+    // No device-side read-back exists for Sys/SetConf -- confirmed by both
+    // BT captures (the official app never sends a Get) and direct testing
+    // from this daemon (a plain write gets no reply, and a probing
+    // "Sys/GetConf" also gets no reply). So this only remembers the last
+    // value *this app* sent, in UserDefaults, and seeds the UI from that
+    // on next launch -- it is NOT a live device readback, and can drift
+    // from the device's true state if changed from the official app or the
+    // device's own physical controls. The UI caption makes this explicit.
+    private static let defaults = UserDefaults.standard
+    private static func cacheKey(_ field: String) -> String { "DeviceSettings.\(field)" }
+
+    private static func cachedInt(_ field: String, default def: Int) -> Int {
+        let key = cacheKey(field)
+        return defaults.object(forKey: key) != nil ? defaults.integer(forKey: key) : def
+    }
+
+    private func cache(_ field: String, _ value: Int) {
+        Self.defaults.set(value, forKey: Self.cacheKey(field))
+    }
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+        notificationSound = Double(Self.cachedInt("NotificationSound", default: 30))
+        temperatureMode = Self.cachedInt("TemperatureMode", default: 0)
+        dateFormat = Self.cachedInt("DateFormat", default: 0)
+        time24 = Self.cachedInt("Time24Flag", default: 1)
+        bluetoothAutoConnect = Self.cachedInt("BluetoothAutoConnect", default: 0)
+        rememberPowerOnVolume = Self.cachedInt("OnOffVolume", default: 1)
+        autoPowerOff = Self.cachedInt("AutoPowerOff", default: 0)
+    }
+
+    private func setConfPacket(overrides: [String: Any]) -> Data {
+        var job = Self.baseline
+        for (k, v) in overrides { job[k] = v }
+        let body = (try? JSONSerialization.data(withJSONObject: job)) ?? Data()
+        return DivoomRawFrame.build(cmd: 0x01, body: body)
+    }
+
+    private func send(_ overrides: [String: Any], statusOnSuccess: String) {
+        isBusy = true
+        status = "Sending…"
+        let port = UInt16(app.daemonPort) ?? 40583
+        let path = DivoomRawFrame.writePacketsFile(setConfPacket(overrides: overrides), name: "device-settings-setconf", in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: port) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                let hardFailure = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                self.status = hardFailure ? "Device settings issue: \(result)" : statusOnSuccess
+            }
+        }
+    }
+
+    func setNotificationSound(_ level: Int) {
+        notificationSound = Double(level)
+        cache("NotificationSound", level)
+        send(["NotificationSound": level], statusOnSuccess: "Notification sound: \(level).")
+    }
+
+    // Confirmed by direct on-device observation: 0=Celsius, 1=Fahrenheit.
+    func setTemperatureMode(_ mode: Int) {
+        temperatureMode = mode
+        cache("TemperatureMode", mode)
+        send(["TemperatureMode": mode], statusOnSuccess: "Temperature unit: \(mode == 0 ? "Celsius" : "Fahrenheit").")
+    }
+
+    // Confirmed by a real capture cycling all 6 values in order and
+    // reading the on-device labels.
+    func setDateFormat(_ format: Int) {
+        dateFormat = format
+        cache("DateFormat", format)
+        send(["DateFormat": format], statusOnSuccess: "Date format: \(Self.dateFormatNames[format]).")
+    }
+
+    // Field appeared in the first capture but wasn't a setting the user
+    // deliberately exercised -- 1=24-hour assumed from the field name
+    // only, not visually confirmed.
+    func setTime24(_ value: Int) {
+        time24 = value
+        cache("Time24Flag", value)
+        send(["Time24Flag": value], statusOnSuccess: "Clock format: \(value == 1 ? "24-hour (unconfirmed)" : "12-hour (unconfirmed)").")
+    }
+
+    // Confirmed by a real capture: 0->1->0 while toggling "Bluetooth Audio
+    // Reconnect" in the app. 1=enabled.
+    func setBluetoothAutoConnect(_ value: Int) {
+        bluetoothAutoConnect = value
+        cache("BluetoothAutoConnect", value)
+        send(["BluetoothAutoConnect": value], statusOnSuccess: "Bluetooth auto-reconnect: \(value == 1 ? "on" : "off").")
+    }
+
+    // Confirmed by a real capture: 1->0->1 while toggling "Remember
+    // power-on volume" in the app (OnOffVolume field). 1=enabled.
+    func setRememberPowerOnVolume(_ value: Int) {
+        rememberPowerOnVolume = value
+        cache("OnOffVolume", value)
+        send(["OnOffVolume": value], statusOnSuccess: "Remember power-on volume: \(value == 1 ? "on" : "off").")
+    }
+
+    // Confirmed by a real capture cycling all 6 values in order
+    // (0/30/60/180/360/720 minutes).
+    func setAutoPowerOff(_ minutes: Int) {
+        autoPowerOff = minutes
+        cache("AutoPowerOff", minutes)
+        send(["AutoPowerOff": minutes], statusOnSuccess: minutes == 0 ? "Auto power off: never." : "Auto power off: \(minutes) min.")
+    }
+}
+
+/// One label+control row, sized to its content instead of a fixed frame --
+/// keeps the label column tight regardless of a control's natural width.
+private struct SettingRow<Content: View>: View {
+    let label: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack {
+            Text(label).font(.subheadline)
+            Spacer(minLength: 12)
+            content
+        }
+    }
+}
+
+struct DeviceSettingsView: View {
+    @ObservedObject var model: DeviceSettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Text("Device Settings").font(.headline)
+                // Device-side note (not a bug in this app): after any of
+                // these settings changes, the MiniToo's own on-screen menu
+                // can show stale text until you back out and re-enter that
+                // menu on the device -- confirmed hardware-tested
+                // 2026-07-07, the setting itself does take effect
+                // immediately, only the device's own menu redraw lags. Also
+                // no live device read-back exists, so values below are only
+                // ever "last one this app sent". See README.md
+                // Troubleshooting.
+                Image(systemName: "questionmark.circle")
+                    .foregroundColor(.secondary)
+                    .help("Device menus may show stale text after a change until you back out and re-enter them on the device -- the setting itself still applies immediately. Values below are the last ones set from this app, not a live read of the device -- there's no way to query current device state for these settings.")
+            }
+
+            SettingRow(label: "Notification Sound") {
+                Slider(
+                    value: Binding(
+                        get: { model.notificationSound },
+                        set: { model.notificationSound = $0 }
+                    ),
+                    in: 0...100,
+                    onEditingChanged: { editing in
+                        if !editing { model.setNotificationSound(Int(model.notificationSound)) }
+                    }
+                )
+                .frame(width: 140)
+                .disabled(model.isBusy)
+                Text("\(Int(model.notificationSound))").font(.caption).foregroundColor(.secondary).frame(width: 24, alignment: .trailing)
+            }
+
+            SettingRow(label: "Temperature Unit") {
+                Picker("", selection: Binding(
+                    get: { model.temperatureMode },
+                    set: { model.setTemperatureMode($0) }
+                )) {
+                    Text("Celsius").tag(0)
+                    Text("Fahrenheit").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+                .labelsHidden()
+                .disabled(model.isBusy)
+            }
+
+            SettingRow(label: "Date Format") {
+                Picker("", selection: Binding(
+                    get: { model.dateFormat },
+                    set: { model.setDateFormat($0) }
+                )) {
+                    ForEach(0..<DeviceSettingsModel.dateFormatNames.count, id: \.self) { index in
+                        Text(DeviceSettingsModel.dateFormatNames[index]).tag(index)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 130)
+                .labelsHidden()
+                .disabled(model.isBusy)
+            }
+
+            SettingRow(label: "Clock Format (unconfirmed)") {
+                Picker("", selection: Binding(
+                    get: { model.time24 },
+                    set: { model.setTime24($0) }
+                )) {
+                    Text("12-hour").tag(0)
+                    Text("24-hour").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+                .labelsHidden()
+                .disabled(model.isBusy)
+            }
+
+            SettingRow(label: "Bluetooth Auto-Reconnect") {
+                Toggle("", isOn: Binding(
+                    get: { model.bluetoothAutoConnect == 1 },
+                    set: { model.setBluetoothAutoConnect($0 ? 1 : 0) }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .disabled(model.isBusy)
+            }
+
+            SettingRow(label: "Remember Power-On Volume") {
+                Toggle("", isOn: Binding(
+                    get: { model.rememberPowerOnVolume == 1 },
+                    set: { model.setRememberPowerOnVolume($0 ? 1 : 0) }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .disabled(model.isBusy)
+            }
+
+            SettingRow(label: "Auto Power Off") {
+                Picker("", selection: Binding(
+                    get: { model.autoPowerOff },
+                    set: { model.setAutoPowerOff($0) }
+                )) {
+                    ForEach(DeviceSettingsModel.autoPowerOffMinutes, id: \.self) { minutes in
+                        Text(minutes == 0 ? "Never" : "\(minutes) min").tag(minutes)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 130)
+                .labelsHidden()
+                .disabled(model.isBusy)
+            }
+
+            HStack(spacing: 8) {
+                if model.isBusy {
+                    ProgressView().controlSize(.small)
+                }
+                Text(model.status).font(.caption).foregroundColor(.secondary)
+                Spacer()
+            }
+        }
+        .padding(20)
+    }
+}
+
 struct ControlCenterView: View {
     @ObservedObject var sendModel: ControlCenterModel
     @ObservedObject var whiteNoiseModel: WhiteNoiseModel
@@ -1030,6 +1339,7 @@ struct ControlCenterView: View {
     @ObservedObject var batteryMonitor: BatteryMonitorModel
     @ObservedObject var photoAlbumModel: PhotoAlbumModel
     @ObservedObject var atmosphereModel: AtmosphereModel
+    @ObservedObject var deviceSettingsModel: DeviceSettingsModel
     @State private var selection: ControlCenterFunction?
 
     var body: some View {
@@ -1055,11 +1365,23 @@ struct ControlCenterView: View {
                         .foregroundColor(.accentColor)
                         .padding([.top, .horizontal], 8)
 
+                        // fixedSize forces this screen to report its own
+                        // true intrinsic width instead of greedily
+                        // accepting whatever width the *previous* screen
+                        // left the window at -- without it, a narrower
+                        // screen opened right after a wider one (e.g.
+                        // Device Settings after the icon grid) gets stuck
+                        // at the old wider size, since a plain
+                        // maxWidth:.infinity child just fills whatever's
+                        // already proposed rather than reporting what it
+                        // actually needs.
                         detailView(for: selection)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
                     functionGrid
+                        .fixedSize(horizontal: true, vertical: false)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
@@ -1100,6 +1422,7 @@ struct ControlCenterView: View {
         case .customFaces: CustomFacesView(model: customFacesModel)
         case .photoAlbum: PhotoAlbumView(model: photoAlbumModel)
         case .atmosphere: AtmosphereView(model: atmosphereModel)
+        case .deviceSettings: DeviceSettingsView(model: deviceSettingsModel)
         }
     }
 }
@@ -1121,7 +1444,9 @@ extension DivoomMenuBar {
             self.photoAlbumModel = photoAlbumModel
             let atmosphereModel = AtmosphereModel(app: self)
             self.atmosphereModel = atmosphereModel
-            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor, photoAlbumModel: photoAlbumModel, atmosphereModel: atmosphereModel))
+            let deviceSettingsModel = DeviceSettingsModel(app: self)
+            self.deviceSettingsModel = deviceSettingsModel
+            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor, photoAlbumModel: photoAlbumModel, atmosphereModel: atmosphereModel, deviceSettingsModel: deviceSettingsModel))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Divoom Control Center"
             window.styleMask = [.titled, .closable, .miniaturizable]

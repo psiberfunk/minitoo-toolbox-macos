@@ -1109,3 +1109,228 @@ value 2) produced no visible change with no music playing, consistent with
 the "Lyric" naming theory above — not re-tested yet with actual music
 playing. Treat `Background` switching as solid; treat `TextEffect` as
 unconfirmed/likely-needs-active-music until re-tested.
+
+## Device Settings (`Sys/SetConf`)
+
+Miscellaneous device settings (notification-sound level, temperature unit,
+date format, 24-hour clock, Bluetooth auto-reconnect, remember power-on
+volume, auto power-off) turned out to share **one single JSON command** —
+there's no per-setting opcode. Decoded from two real BT HCI snoop captures
+(2026-07-06 and 2026-07-07, same methodology as Photo Album/Atmosphere) of
+the official app toggling each setting back and forth.
+
+**Gotcha hit during the second capture, worth remembering for the next
+one:** a fresh reconnect reassigns L2CAP CIDs from scratch — the outgoing
+JSON channel was `cid=76` in the first capture and `cid=65` in the second.
+Scanning only the previously-known CID number found nothing new and looked
+like the app's later actions weren't reaching Bluetooth at all; the real
+traffic was sitting on a different CID the whole time. Always re-run the
+parser's CID-count listing fresh per capture rather than assuming the
+number from last time still applies.
+
+### How the app actually does it
+
+The app keeps one large local settings object (device config + a chunk of
+account/location state) and re-sends the **entire thing** as a single
+`Sys/SetConf` JSON command, over plain `SPP_JSON` (`0x01`), every time
+*any one* field changes — full state, not a delta. Same "always resend the
+whole object" pattern this project already uses for White Noise/Atmosphere,
+just with a much bigger object (~35 fields). No `Sys/GetConf` was ever
+observed in the capture — the app never explicitly reads the config back;
+it just trusts its own cached local state and blindly overwrites the
+device's on every change.
+
+**Confirmed by direct hardware testing (2026-07-07): there is no
+state-readback for this command at all**, unlike White Noise's
+`WhiteNoise/Get` or Atmosphere's `Lyric/GetConfig`. Tested directly against
+a real MiniToo from this project's own daemon: a plain `Sys/SetConf` write
+gets no reply, and probing with an invented `Sys/GetConf` (a command the
+official app never sends) also gets no reply, even waiting 5-6 seconds.
+(An earlier reading of the daemon's rx log appeared to show the device
+echoing full state unprompted, but that turned out to be stale log content
+left over from a prior daemon session that hadn't been fully restarted —
+a clean daemon restart plus one isolated test command produced zero
+device-initiated traffic.) Consequence: this project's Device Settings
+screen has no way to detect drift if a setting is changed from the
+official app or the device's own physical controls — it can only remember
+what it last sent (cached in `UserDefaults`, see Implementation below), not
+read the device's true current state.
+
+Also specifically checked: the original phone capture's lone
+`Sys/DevUpdateConf` push (the one that looked like a spontaneous
+connect-time state announce) sits chronologically right after the app's
+first `Device/SetUTC` send, which raised the question of whether SetUTC
+itself is the trigger. Tested directly: sending `Device/SetUTC` alone
+against a freshly-restarted daemon connection produced no reply either.
+Whatever actually triggered that one push in the phone capture — possibly
+something specific to the official app's "add device" pairing flow, or
+some other part of its multi-command startup burst (alarm list, tomato
+list, clock info, etc. all fired in a tight sequence before it) — wasn't
+isolated. Not a resolved "no-op query command" the way `WhiteNoise/Get`
+or `Lyric/GetConfig` are; would need a capture specifically designed to
+bisect the startup sequence to pin down further, and doesn't seem worth
+the effort for what it'd unlock. The `(?)` tooltip on the Device Settings
+screen tells the user this straightforwardly instead.
+
+Wire-level, this JSON blob is long enough (~700 bytes) to exceed one RFCOMM
+frame, so the official app splits it across two consecutive RFCOMM
+writes with no application-level ACK/handshake between them (plain
+transport-level fragmentation, not the chunked-transfer-with-ACK pattern
+`0x8b`/Photo Album use). This project's own `DivoomRawFrame.build` +
+daemon write path doesn't need to replicate that split manually — macOS's
+`IOBluetoothRFCOMMChannel` fragments large single writes at the transport
+layer on its own, so building one `Sys/SetConf` JSON frame (regardless of
+size) and sending it as a single ordinary job is sufficient, the same as
+every other JSON command in this codebase.
+
+### Baseline object (captured, real values)
+
+```json
+{
+  "AutoPowerOff": 0, "BluetoothAutoConnect": 0, "ColorTemp": 0,
+  "Command": "Sys/SetConf", "DateFormat": 0, "DeviceAutoUpdate": 1,
+  "DeviceId": 0, "DevicePassword": 0, "DisableMic": 0, "GyrateAngle": 0,
+  "HighLight": 0, "Language": 0, "Latitude": 0, "LcdImageArray": ["","","","",""],
+  "LocationCityId": 0, "LocationCityName": "", "LocationMode": 0,
+  "LockScreenTime": 600, "Longitude": 0, "MirrorFlag": 0,
+  "NotificationSound": 30, "OnOffVolume": 1, "ScreenProtection": 0,
+  "ShowGrid1632": 1, "StartupFileId": "", "TemperatureMode": 0,
+  "Time24Flag": 1, "TimeZoneMode": 0, "TimeZoneName": "", "TimeZoneValue": "",
+  "Token": 0, "UserId": 0, "WhiteBalanceB": 100, "WhiteBalanceG": 100,
+  "WhiteBalanceR": 100, "Wind": 0
+}
+```
+
+(`DeviceId`/`Token`/`UserId`/`DevicePassword`/`Latitude`/`Longitude`/
+`TimeZoneName`/`TimeZoneValue` shown zeroed/blanked above — the real
+capture had the phone's own account/location values in these fields.
+MiniToo has no WiFi/GPS of its own and every other already-implemented
+JSON command in this codebase uses one fixed placeholder `DeviceId`/
+`Token`/`UserId` trio that's confirmed to work against this device, so the
+implementation reuses that same trio here rather than the account-specific
+values seen in the capture. The rest of the fields — `ColorTemp`,
+`GyrateAngle`, `MirrorFlag`, `WhiteBalance*`, `ShowGrid1632`, etc. — read
+like settings for other Divoom product lines (lamps/light cubes, rotating
+displays) sharing this same command across Divoom's whole catalog, same
+situation as the "screen dir cfg" opcode documented above; left untouched
+at their captured values as inert passengers rather than guessed at.
+
+**Implementation approach:** always start from this exact baseline object,
+override only the field(s) the user actually changed, and send the whole
+thing — mirrors what the real app does, and avoids clobbering the fields
+above with guessed values.
+
+### Fields exposed in this project
+
+- **`NotificationSound`** (int) — a *level*, not a boolean. Observed values
+  30 → 54 → 13 during one on-device sound-level control being exercised a
+  couple of times; range/scale not pinned down beyond "well under 100".
+  Exposed as a 0-100 slider.
+- **`TemperatureMode`** (0/1) — **confirmed by direct visual observation**:
+  `0` = Celsius, `1` = Fahrenheit (user watched the on-device unit flip
+  C → F → C while this field went 0 → 1 → 0).
+- **`DateFormat`** (0-5, six values) — **confirmed by a second capture**
+  cycling through all six in order and the user reading each on-screen
+  label directly:
+
+  | Value | Format |
+  |---|---|
+  | 0 | `yyyy-mm-dd` |
+  | 1 | `dd-mm-yyyy` |
+  | 2 | `mm-dd-yyyy` |
+  | 3 | `yyyy.mm.dd` |
+  | 4 | `dd.mm.yyyy` |
+  | 5 | `mm.dd.yyyy` |
+
+- **`Time24Flag`** (0/1) — appeared in the first capture (1 → 0, then later
+  0 → 1 → 0) alongside settings the user *did* deliberately toggle, but the
+  user didn't consciously exercise this one — semantics (`1` = 24-hour,
+  `0` = 12-hour) assumed from the field name only, **not visually
+  confirmed**. Included in the UI as a bonus toggle per the user's request,
+  flagged unconfirmed.
+- **`BluetoothAutoConnect`** (0/1) — **confirmed by the second capture**:
+  observed 0 → 1 → 0 exercising the "Bluetooth Audio Reconnect" toggle.
+  `1` = enabled, matching the field name and standard toggle convention
+  (off by default, first tap turns it on).
+- **`OnOffVolume`** (0/1) — **confirmed by the second capture**: "Remember
+  power-on volume" observed 1 → 0 → 1 (already on by default from the
+  first capture, user turned it off then back on this time). `1` =
+  enabled.
+- **`AutoPowerOff`** (int, six values) — **confirmed by the second
+  capture**: cycled 0 → 30 → 60 → 180 → 360 → 720 → 0. Clean round minute
+  values — `0` = off/never, then 30 min, 1 hr, 3 hr, 6 hr, 12 hr. On-screen
+  labels for the non-zero values weren't read directly, but the numbers
+  are unambiguous.
+
+### Confirmed NOT sent over Bluetooth
+
+Two settings on the same app screen — **"Shake Shake"** and **"Tap and
+Play"** — produced **zero field change** across two `Sys/SetConf` resends
+in the second capture, even though the user tapped them between the
+`BluetoothAutoConnect` and `AutoPowerOff` sequences. The app fired its
+habitual full-state resend (screen-interaction reflex) both times, but the
+JSON payload was byte-for-byte identical before and after. Matches the
+user's own observation live in the app: neither one triggered any kind of
+save/sync indicator. These two are Android/phone-local settings (probably
+gesture-to-launch-camera / NFC-ish tap features that live entirely in the
+phone's OS, unrelated to Divoom's own device state) and are **not
+implemented here** — there is nothing to send.
+
+### Implementation
+
+`tools/divoom_device_settings.py` — CLI with a `set` subcommand, always
+starting from the baseline object above and overriding only the flag(s)
+passed. Wired into Control Center as a "Device Settings" screen
+(`DeviceSettingsModel`/`DeviceSettingsView` in `DivoomControlCenter.swift`):
+a notification-sound slider, a Celsius/Fahrenheit segmented control, a
+6-way date-format picker (real labels above), a 24-hour-clock toggle
+(unconfirmed mapping, as noted), a Bluetooth-auto-reconnect toggle, a
+remember-power-on-volume toggle, and a 6-way auto-power-off picker. Each
+change re-sends the full baseline object with just that field overridden,
+as a single native `DivoomRawFrame` job (same fire-and-forget fast path as
+brightness/screen on-off). Since there's no real device readback (see
+above), each control's last-sent value is cached in `UserDefaults` and
+used to seed the UI on next launch — the screen says so explicitly, since
+this is "last value this app sent," not a live device state query.
+
+**Hardware-tested (2026-07-07):** temperature unit, date format, clock
+format, Bluetooth auto-reconnect, remember-power-on-volume, and auto
+power-off all confirmed working end-to-end from this app's own UI against
+a real MiniToo. One MiniToo-side quirk found during testing, not a bug in
+this app: **the device's own on-screen settings menu can show stale text
+after a change sent from this app (or the official app) until you back out
+and re-enter that menu on the device** — the setting itself takes effect
+immediately; only the device's own menu redraw lags behind. Confirmed
+across all of the above settings. Documented as a general callout in
+README.md's Troubleshooting section and via a `(?)` tooltip (`.help(...)`
+on a `questionmark.circle` icon next to the screen's title) on the Device
+Settings screen itself — not an inline text block, which ate too much
+vertical space for something most people only need to read once.
+
+Several UI bugs found and fixed during this same hardware-testing pass:
+- The notification-sound slider showed the same discrete tick-mark
+  artifact seen previously on other sliders in this app — traced to
+  passing `step:` to SwiftUI's `Slider`; removing it (rounding the value
+  on read instead, same as the White Noise channel sliders already do)
+  fixed it.
+- The Control Center window stayed oversized (lots of empty space to the
+  right) when switching from a wider screen (e.g. the icon grid) to this
+  narrower one. Root cause: every detail screen is wrapped in
+  `.frame(maxWidth: .infinity, ...)` so the resize logic could measure a
+  consistent size across screens, but a plain `maxWidth: .infinity` child
+  just accepts whatever width the window *already* is rather than
+  reporting what it actually needs — so the window never shrinks back down
+  once a wider screen has stretched it. Fixed by adding
+  `.fixedSize(horizontal: true, vertical: false)` to each detail
+  screen/the icon grid right where they're placed in `ControlCenterView`,
+  forcing each one to report its own true intrinsic width regardless of
+  the window's current size. Checked White Noise and the icon grid
+  afterward for regressions — both still size correctly.
+- The original stacked label-over-control layout (each row: label above,
+  fixed-`200`pt-wide control below) produced uneven whitespace once rows
+  with very different label lengths ("Notification Sound" vs "Bluetooth
+  Auto-Reconnect") sat next to controls that didn't need that much width.
+  Replaced with a `SettingRow` label+control-on-one-line layout (matching
+  White Noise's per-channel row style) and switched the two-state
+  Off/On settings from a stretched segmented control to a native
+  `Toggle`/`.switch`, which is both more compact and more idiomatic macOS.

@@ -267,3 +267,5 @@ Keep `--zstd-window-log 17` unless deliberately testing protocol behavior.
 If `blueutil` fails/aborts when run directly from an interactive Terminal, that's a TCC quirk tied to the calling process — it works fine invoked as a child of the signed `.app` (which is how the app itself uses it). Not a device problem.
 
 Hearing two Bluetooth connect chimes when the daemon starts is cosmetic: RFCOMM connects first, then macOS separately auto-restores the A2DP audio profile a couple seconds later. Not a bug.
+
+After changing a setting under Control Center's "Device Settings" screen (notification sound, temperature unit, date format, clock format, Bluetooth auto-reconnect, remember-power-on-volume, auto power off), the MiniToo's own on-screen settings menu can keep showing the *old* value if you're already sitting on that menu when the change is sent. This is a MiniToo firmware quirk, not a bug in this app or a failed send — the setting takes effect immediately either way. Back out of that menu and go back in on the device to see it redraw with the current value.

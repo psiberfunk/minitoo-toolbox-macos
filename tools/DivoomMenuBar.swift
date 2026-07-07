@@ -99,6 +99,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var deviceControlsModel: DeviceControlsModel?
     var photoAlbumModel: PhotoAlbumModel?
     var atmosphereModel: AtmosphereModel?
+    var deviceSettingsModel: DeviceSettingsModel?
     var preferencesWindow: NSWindow?
     var preferencesModel: PreferencesModel?
     var deviceSetupWindow: NSWindow?
