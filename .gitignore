@@ -16,5 +16,5 @@ tools/divoom-menubar
 # Source/input images used during local testing
 assets/*
 !assets/AppIcon.icns
-!assets/AppIcon-source.jpg
+!assets/AppIcon-source.png
 omo-slim/

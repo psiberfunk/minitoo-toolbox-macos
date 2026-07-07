@@ -93,11 +93,30 @@ Logs and generated packet artifacts are written under:
 ```
 
 The app icon lives at `assets/AppIcon.icns` and is copied into the bundle
-by the build script (`CFBundleIconFile` in `Info.plist`). To regenerate it
-from new source art, pad/crop to a square PNG and rebuild the iconset:
+by the build script (`CFBundleIconFile` in `Info.plist`). Source art is
+`assets/AppIcon-source.png` — bold, high-contrast line art with a solid
+black glyph works far better than fine detail once scaled down to 16-32pt
+(thin outlines and busy detail disappear at that size; a solid dark shape
+is what actually survives). The content is centered on the 1024x1024
+canvas filling ~90% of the frame — margin much wider than that measurably
+hurts legibility at small sizes without buying anything back.
+
+To regenerate after changing the source art:
 
 ```bash
-sips -p 1024 1024 --padColor FFFFFF assets/AppIcon-source.jpg --out /tmp/icon.png -s format png
+python3 -c "
+from PIL import Image
+content = Image.open('assets/AppIcon-source.png').convert('RGB')
+cw, ch = content.size
+canvas = 1024
+target_h = int(canvas * 0.90)          # tune this fill ratio if needed
+scale = target_h / ch
+target_w = int(cw * scale)
+resized = content.resize((target_w, target_h), Image.LANCZOS)
+square = Image.new('RGB', (canvas, canvas), 'white')
+square.paste(resized, ((canvas - target_w)//2, (canvas - target_h)//2))
+square.save('/tmp/icon.png')
+"
 mkdir -p /tmp/AppIcon.iconset
 for spec in "16:icon_16x16.png" "32:icon_16x16@2x.png" "32:icon_32x32.png" "64:icon_32x32@2x.png" \
             "128:icon_128x128.png" "256:icon_128x128@2x.png" "256:icon_256x256.png" \
@@ -106,6 +125,12 @@ for spec in "16:icon_16x16.png" "32:icon_16x16@2x.png" "32:icon_32x32.png" "64:i
 done
 iconutil -c icns /tmp/AppIcon.iconset -o assets/AppIcon.icns
 ```
+
+(`AppIcon-source.png` should already be a tightly-trimmed, white-background
+image with no extra margin baked in — the script above adds all the
+margin. `iconutil` also requires the input directory to literally be named
+`*.iconset`, not just any folder — it fails silently with "Invalid
+Iconset" otherwise.)
 
 ## Menu-bar app
 
