@@ -45,10 +45,43 @@ deliberate, separate step, not bundled into unrelated work.
   device twice; the real, capture-verified format is a 5-byte announce +
   plain JFIF JPEG under a simpler blob header — already in PROTOCOL.md's
   "Photo Album" section, nothing left to promote here.
-- **Device rename (`0x75`, `SPP_SET_DEVICE_NAME`)** has no PROTOCOL.md
-  section yet: body = 1-byte length prefix + raw UTF-8 name bytes, same
-  raw single-opcode frame as brightness; the device never replies to it. →
-  new PROTOCOL.md section.
+- **Device rename (`0x75`, `SPP_SET_DEVICE_NAME`) — shelved, full story.**
+  Protocol: body = 1-byte length prefix + raw UTF-8 name bytes, same raw
+  single-opcode frame family as brightness/screen-on-off (not the JSON-
+  over-BT family); the device never sends a reply to it. Found via APK
+  decompile (`MoreBluetoothFragment.P2()` → `CmdManager.A0(str)` → opcode
+  `0x75`, the opcode right after brightness `0x74`), then confirmed with a
+  real capture. Implemented as `DivoomMenuBar.setDeviceName(_:)` plus a
+  rename field in Preferences.
+  Hardware-tested with a real Android capture once results got confusing
+  (renamed via our tool to "HIPPO", then via the official app to
+  "TESTB"/"TESTBB", power-cycling and re-scanning each time): the capture
+  confirmed our implementation is byte-for-byte identical to the official
+  app's wire bytes for both odd- and even-length names — ruled out any
+  parity/length/framing bug on our side — and confirmed the device never
+  sends any reply/ACK to this command, in either capture. Also corrected
+  an earlier APK-only guess along the way: the `"Divoom MiniToo-Audio-"`
+  broadcast-name prefix is **real device-side/firmware-reconstructed
+  behavior**, not just an Android-app UI convention — the decompiled code
+  only ever sends the typed suffix with no client-side prefix
+  concatenation, but the prefix still reappeared in the device's actual
+  broadcast name in the capture even though neither app ever transmitted
+  it. Trust the hardware result over a code-only inference here if this
+  ever comes up again (e.g. in device-scan/matching logic).
+  **Unresolved real quirk**: after these tests, the device's own
+  auto-reconnect kept broadcasting the earlier, truncated "...-HIPP" even
+  after later legitimate renames via the official app. This looks like the
+  Divoom app optimistically echoing its own last-sent value locally with
+  no device readback (the same optimistic-UI pattern our own Preferences
+  rename uses), rather than two separate BT endpoints disagreeing — but
+  the root cause of the on-device persistence flakiness itself is still
+  unknown; further diagnosis would need more invasive testing than is
+  worth it for this feature's value right now.
+  **Status**: parked per explicit user decision (2026-07-06). Code moved
+  out of `personal` onto the `shelved/device-rename` branch (tip commit
+  `15df6e9`) rather than kept live — revisit there if the persistence gap
+  ever gets solved. Capture artifact:
+  `~/Desktop/MiniTooProject/captures/rename-test.cfa.curf`.
 - **Confirmed protocol dead ends**: general photo/gallery upload pollutes
   the device's own gallery and can't pin one image; `0xBE` fake-FileId
   custom-face path re-uploads on every switch (not actually instant);
