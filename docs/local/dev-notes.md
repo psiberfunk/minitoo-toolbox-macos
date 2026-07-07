@@ -108,6 +108,66 @@ deliberate, separate step, not bundled into unrelated work.
   runtime (`dlopen` + `NSClassFromString`, no headers exist). Filed as an
   Apple Feedback request for a public API, FB23587697.
 
+## Lyrics display on the Atmosphere/Lyric screen — CONFIRMED via capture (2026-07-07)
+
+Confirmed the same day via a real BT HCI snoop capture
+(`captures/lyrics-avrcp-test.cfa.curf`) — see PROTOCOL.md's "TextEffect/
+lyric text" subsection for the full decoded mechanism (standard AVRCP
+`GetElementAttributes`/`RegisterNotification`, Company ID `0x001958`, not
+any custom Divoom command). The theory below is kept as-written for the
+reasoning trail; treat PROTOCOL.md as the source of truth now.
+
+### Original theory (2026-07-07, was unverified — now confirmed above)
+
+Third-party AI research (Perplexity, not independently verified — treat per
+`.claude/rules/protocol-reverse-engineering.md` until confirmed) surfaced a
+theory that reconciles cleanly with what this project already found via
+direct capture + decompile:
+
+- This project's own capture/decompile work (PROTOCOL.md's Atmosphere
+  section) already proved `Lyric/SetConfig` carries only `Background` +
+  `TextEffect` indices — no text field exists anywhere in that JSON
+  schema, and no code path in the decompiled app (checked `LyricModel`,
+  `LyricSetConfigRequest`/`Response`, `DivoomNotificationListenerService`)
+  ever populates lyric content into it.
+- Perplexity's theory: real lyric text on Divoom devices (and other "BT
+  lyric display" gadgets/car stereos) doesn't travel over any custom
+  protocol at all — it rides the **standard AVRCP media-metadata fields**
+  (Song Title/Artist Name, via `GetElementAttributes`) that any
+  Bluetooth-audio-connected phone already broadcasts. Specific music
+  players (QQ Music, NetEase Cloud Music, Kugou, and reportedly PowerAmp on
+  Android via an "Automotive/Car Bluetooth Lyric" toggle) rewrite that
+  metadata field in real time to the current lyric line instead of the
+  real title; anything that displays "Now Playing" title text — including,
+  theoretically, MiniToo's `Lyric/Enter` screen — would render it with zero
+  Divoom-specific protocol work needed on our side.
+- This would cleanly explain two things already observed: why `TextEffect`
+  produced no visible change in the one hardware test done (no player had
+  this toggle enabled, so no AVRCP title updates were happening); and why
+  the JSON schema has no text field at all (text was never meant to travel
+  over `SPP_JSON` — AVRCP is a different, standard BT profile, entirely
+  orthogonal to the custom `0x01 SPP_JSON` channel this project has been
+  capturing).
+
+**Caveat, important**: the Perplexity answer's actual supporting citations
+(Reddit threads) are about the Tivoo 2 and Ditoo Pro, not the MiniToo —
+despite the query explicitly asking it to distinguish those. No source
+directly confirms MiniToo's screen renders AVRCP title metadata as
+scrolling text at all. Treat as an untested, well-reasoned hypothesis, not
+a confirmed mechanism, until physically tested.
+
+**Cheapest possible test (no new code, no capture, no protocol risk)**:
+connect an Android phone to the MiniToo for audio as normal, put the
+MiniToo into `Lyric/Enter` mode (the app's "Atmosphere" screen), enable a
+"car/automotive Bluetooth lyric" toggle in a player that supports it
+(PowerAmp has one; QQ Music/NetEase/Kugou reportedly have it natively),
+play a track with local `.lrc` lyrics or the app's own synced lyrics, and
+just watch the device screen. If nothing appears, the theory is dead and
+`TextEffect` really is vestigial UI carried over from Divoom's WiFi-device
+codebase. If something does appear, it's a genuinely new, zero-protocol
+-risk feature to formalize — the "workflow" would likely just be "put a
+phone in the right playback mode," no app code changes required at all.
+
 ## Legacy rescue, second pass
 `project_divoom_minitoo.md` (the old memory file) is being kept as an
 unindexed archive, not deleted — a second look turned up 3 more items

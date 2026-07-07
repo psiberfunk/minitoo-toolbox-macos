@@ -1106,9 +1106,64 @@ just called the daemon directly): selecting `Background` 0, 3, and 5 each
 visibly changed the device's screen to a different animated visual,
 confirmed directly by the user each time. Selecting a `TextEffect` (tested
 value 2) produced no visible change with no music playing, consistent with
-the "Lyric" naming theory above — not re-tested yet with actual music
-playing. Treat `Background` switching as solid; treat `TextEffect` as
-unconfirmed/likely-needs-active-music until re-tested.
+the "Lyric" naming theory above. Treat `Background` switching as solid.
+
+### `TextEffect`/lyric text — confirmed mechanism is AVRCP, not SPP_JSON (2026-07-07)
+
+**Confirmed via a real BT HCI snoop capture** (Android tablet, a
+third-party "Bluetooth car lyrics" title-swapping app playing a local
+track, no official Divoom app involved in this specific test) that the
+actual lyric *text* never travels over `Lyric/SetConfig` or any other
+custom Divoom command at all. It rides the **standard AVRCP profile**
+(Company ID `0x001958` — the Bluetooth SIG's own vendor ID, not Divoom's)
+that's already active on any Bluetooth-audio-connected phone, entirely
+independent of the `0x01 SPP_JSON` channel this project has been
+capturing everywhere else.
+
+Confirmed trigger chain, from `captures/lyrics-avrcp-test.cfa.curf`
+(L2CAP CID 130 carried every hit; parsed with
+`parse_btsnoop_rfcomm.py`'s `parse_l2cap_frames()`, since AVRCP uses AVCTP
+framing, not RFCOMM, so the script's `--cid` RFCOMM decode path doesn't
+apply here — text was located by grepping reassembled L2CAP payloads
+directly):
+
+1. Phone sends `RegisterNotification` response, `ctype=CHANGED`,
+   `EventID=0x02` (`TRACK_CHANGED`) — the phone's media session considers
+   the current track "new" (see below for why).
+2. MiniToo immediately re-registers for the same event; phone acks
+   `ctype=INTERIM`.
+3. MiniToo issues `GetElementAttributes` (PDU `0x20`); phone responds
+   `ctype=STABLE` with the attribute list — `AttributeID=1` (Title),
+   `AttributeID=2` (ArtistName), etc., each as a UTF-8 string with a
+   2-byte length prefix. Example decoded payload:
+   `AttributeID=1, CharSet=UTF-8(0x006A), Len=13, Value="Lavender Haze"`
+   followed by `AttributeID=2, Len=12, Value="Taylor Swift"`.
+
+**So the MiniToo is the AVRCP *Controller* (it polls/reacts), and the
+phone is the AVRCP *Target* (it answers)** — this is the same standard
+"Now Playing" title-display mechanism any basic Bluetooth speaker/car
+head unit implements, just repurposed by lyric-hack apps to shove lyric
+lines into the Title field instead of a real song title.
+
+**Why the observed titles alternated between `"Lavender Haze"` (13 bytes)
+and `"Lavender Haze "` (14 bytes, trailing space)**: the MiniToo only
+re-fetches metadata off a `TRACK_CHANGED` event, not on a timer/poll
+loop. A lyrics app pushing successive lines needs each push to look like
+a genuinely new track to the phone's own media-session/AVRCP stack, or
+`TRACK_CHANGED` never fires and the display never updates — the trailing
+-space toggle is a cheap way to force that, seen alternating across the
+full capture every time the app pushed a new value.
+
+**Implication for this project**: since this is standard AVRCP, not a
+Divoom-specific command, there is nothing new to add to `CmdManager`/the
+daemon's opcode set — no brick risk, no new opcode. A macOS
+implementation would need to (a) hold an active audio session so macOS's
+own Bluetooth stack answers `GetElementAttributes` at all, and (b) find
+what macOS's own AVRCP/`MPNowPlayingInfoCenter` layer treats as "new
+track" so it actually fires `TRACK_CHANGED` on each lyric-line push —
+untested so far, and not guaranteed to work identically to Android's
+stack. Not yet attempted; see `docs/local/status.md`/roadmap for next
+steps.
 
 ## Device Settings (`Sys/SetConf`)
 
