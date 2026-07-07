@@ -156,7 +156,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--time24", type=int, choices=[0, 1], default=None,
-        help="1=24-hour clock, 0=12-hour -- assumed from field name, not visually confirmed",
+        help="1=24-hour clock, 0=12-hour -- confirmed by direct hardware testing",
     )
     parser.add_argument(
         "--bluetooth-auto-connect", type=int, choices=[0, 1], default=None,

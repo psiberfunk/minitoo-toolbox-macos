@@ -1242,12 +1242,13 @@ above with guessed values.
   | 4 | `dd.mm.yyyy` |
   | 5 | `mm.dd.yyyy` |
 
-- **`Time24Flag`** (0/1) — appeared in the first capture (1 → 0, then later
-  0 → 1 → 0) alongside settings the user *did* deliberately toggle, but the
-  user didn't consciously exercise this one — semantics (`1` = 24-hour,
-  `0` = 12-hour) assumed from the field name only, **not visually
-  confirmed**. Included in the UI as a bonus toggle per the user's request,
-  flagged unconfirmed.
+- **`Time24Flag`** (0/1) — **confirmed by direct hardware testing
+  (2026-07-07)**: `1` = 24-hour, `0` = 12-hour, matching the field name.
+  (Appeared in the first capture toggling on its own, 1 → 0 then later
+  0 → 1 → 0, alongside settings the user deliberately toggled without
+  this one being consciously exercised at capture time — the mapping was
+  confirmed afterward by directly testing the control from this app's own
+  UI and watching the device.)
 - **`BluetoothAutoConnect`** (0/1) — **confirmed by the second capture**:
   observed 0 → 1 → 0 exercising the "Bluetooth Audio Reconnect" toggle.
   `1` = enabled, matching the field name and standard toggle convention
@@ -1283,8 +1284,7 @@ starting from the baseline object above and overriding only the flag(s)
 passed. Wired into Control Center as a "Device Settings" screen
 (`DeviceSettingsModel`/`DeviceSettingsView` in `DivoomControlCenter.swift`):
 a notification-sound slider, a Celsius/Fahrenheit segmented control, a
-6-way date-format picker (real labels above), a 24-hour-clock toggle
-(unconfirmed mapping, as noted), a Bluetooth-auto-reconnect toggle, a
+6-way date-format picker (real labels above), a 24-hour-clock toggle, a
 remember-power-on-volume toggle, and a 6-way auto-power-off picker. Each
 change re-sends the full baseline object with just that field overridden,
 as a single native `DivoomRawFrame` job (same fire-and-forget fast path as

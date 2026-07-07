@@ -1155,13 +1155,12 @@ final class DeviceSettingsModel: ObservableObject {
         send(["DateFormat": format], statusOnSuccess: "Date format: \(Self.dateFormatNames[format]).")
     }
 
-    // Field appeared in the first capture but wasn't a setting the user
-    // deliberately exercised -- 1=24-hour assumed from the field name
-    // only, not visually confirmed.
+    // Confirmed by direct hardware testing (2026-07-07): 1=24-hour,
+    // 0=12-hour, matching the field name.
     func setTime24(_ value: Int) {
         time24 = value
         cache("Time24Flag", value)
-        send(["Time24Flag": value], statusOnSuccess: "Clock format: \(value == 1 ? "24-hour (unconfirmed)" : "12-hour (unconfirmed)").")
+        send(["Time24Flag": value], statusOnSuccess: "Clock format: \(value == 1 ? "24-hour" : "12-hour").")
     }
 
     // Confirmed by a real capture: 0->1->0 while toggling "Bluetooth Audio
@@ -1270,7 +1269,7 @@ struct DeviceSettingsView: View {
                 .disabled(model.isBusy)
             }
 
-            SettingRow(label: "Clock Format (unconfirmed)") {
+            SettingRow(label: "Clock Format") {
                 Picker("", selection: Binding(
                     get: { model.time24 },
                     set: { model.setTime24($0) }
