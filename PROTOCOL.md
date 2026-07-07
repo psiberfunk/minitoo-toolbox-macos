@@ -1112,9 +1112,13 @@ the "Lyric" naming theory above. Treat `Background` switching as solid.
 
 **Confirmed via a real BT HCI snoop capture** (Android tablet, a
 third-party "Bluetooth car lyrics" title-swapping app playing a local
-track, no official Divoom app involved in this specific test) that the
-actual lyric *text* never travels over `Lyric/SetConfig` or any other
-custom Divoom command at all. It rides the **standard AVRCP profile**
+track, no official Divoom app involved in this specific test) that lyric
+*text* can ride the **standard AVRCP profile** without ever touching
+`Lyric/SetConfig`. This is confirmed as *a* working path, not proven to be
+the *only* one — no genuine music-lyrics-sync app was tested (only a
+title-swap workaround), and a second, decompile-only candidate exists (see
+"Music Name display style" below) that hasn't been ruled in or out. It
+rides the
 (Company ID `0x001958` — the Bluetooth SIG's own vendor ID, not Divoom's)
 that's already active on any Bluetooth-audio-connected phone, entirely
 independent of the `0x01 SPP_JSON` channel this project has been
@@ -1164,6 +1168,56 @@ track" so it actually fires `TRACK_CHANGED` on each lyric-line push —
 untested so far, and not guaranteed to work identically to Android's
 stack. Not yet attempted; see `docs/local/status.md`/roadmap for next
 steps.
+
+**Confirmed by direct user observation (2026-07-07)**: the MiniToo only
+ever rendered the Title text on screen during this test — the Artist
+attribute (`AttributeID=2`) is present in every captured response
+alongside the title but was never visible on the device. So the on-device
+renderer for this feature is title-only.
+
+**Delay — only partially measurable from this capture**: wire time from
+the `TRACK_CHANGED` notification to the `GetElementAttributes` reply
+carrying the new title was ~16ms in the one instance traced (records
+12763→12769) — negligible. That's only the Bluetooth-transport hop,
+though; it does not cover how long the phone's OS took internally to
+decide the track had "changed" after the app pushed a new title, nor how
+long the MiniToo takes to redraw its screen after receiving the
+attributes — neither is visible in a packet capture. Total perceived
+end-to-end delay is unmeasured; would need a stopwatch against the real
+screen, not another capture.
+
+### Music Name display style (`0xBD 0x1C`) — decompile-only, NOT verified
+
+A second, separate screen exists in the decompiled app under "Light" →
+"Lyrics Display" (`LightLyricFragment.java`, string resource
+`light_lyric_title` = "歌词显示"): a color picker (9 preset colors + a
+custom color bar) and a scroll-speed slider, with **no free-text field**.
+It sends a binary command, not JSON, within the already-known-safe
+`SPP_DIVOOM_EXTERN_CMD` (`0xBD`) family this project already uses for
+screen on/off (`0xBD 0x2F`):
+
+```
+0xBD 0x1C 0x00                                 -- get current config
+0xBD 0x1C 0x01 <speed> <red> <green> <blue>    -- set style
+```
+
+(`0x1C` = 28 = `SPP_SECOND_SET_MUSIC_NAME_CFG` in the decompiled
+`SppProc$EXT_CMD_TYPE` enum; the device can also send this same frame
+type unprompted, per the app's own incoming-packet dispatch table, so a
+`GetConfig`/state-push pattern like White Noise/Atmosphere likely applies
+here too.)
+
+Because there's no text field in this screen's UI, this most plausibly
+configures the *display style* (color/scroll speed) for whatever title
+text is already reaching the device by some other route (e.g. the AVRCP
+mechanism above) — not a second way to deliver the text itself. **Not
+capture-verified, not hardware-tested, and not even confirmed to be
+reachable from the MiniToo's actual app UI** — this project has only
+found it in decompiled code shared across Divoom's device catalog, and
+per this project's own methodology, decompiled code alone has been wrong
+before. Before ever sending `0xBD 0x1C` from this project's own code:
+first check whether the official app even shows this "Lyrics Display"
+sub-screen with the MiniToo connected, then capture it if it does.
 
 ## Device Settings (`Sys/SetConf`)
 

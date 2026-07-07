@@ -168,6 +168,79 @@ codebase. If something does appear, it's a genuinely new, zero-protocol
 -risk feature to formalize — the "workflow" would likely just be "put a
 phone in the right playback mode," no app code changes required at all.
 
+### Open questions after the AVRCP capture (2026-07-07)
+
+The AVRCP mechanism above is confirmed *a* working path, not proven to be
+the *only* one, and three follow-up questions came out of reviewing it
+with the user — full detail (including the raw opcode) is in PROTOCOL.md's
+"Atmosphere" section, this is just the session-continuity pointer:
+
+- **A second, decompile-only candidate exists**: `0xBD 0x1C`
+  (`SPP_SECOND_SET_MUSIC_NAME_CFG`, inside the already-known-safe
+  `SPP_DIVOOM_EXTERN_CMD` family) — a color+scroll-speed config under a
+  "Light" → "Lyrics Display" screen in the decompiled app, with no
+  free-text field of its own. Most plausibly configures *display style*
+  for whatever title text is already arriving via AVRCP, not a rival text
+  channel. **Not capture-verified, not hardware-tested, not even confirmed
+  reachable from MiniToo's actual app UI.** Next step: check the official
+  app for this tab with the MiniToo connected before touching this opcode
+  at all.
+- **Artist name confirmed not rendered** — the device only ever showed
+  Title on screen during the test, even though `AttributeID=2` (Artist)
+  was present in every captured response. Direct user observation, not an
+  inference.
+- **End-to-end delay only partially measured** — wire time from
+  `TRACK_CHANGED` to the `GetElementAttributes` reply was ~16ms
+  (negligible) in the one instance traced. That's only the BT-transport
+  hop; total perceived delay also depends on the phone's own OS-internal
+  timing and the MiniToo's on-screen redraw time, neither observable from
+  a packet capture. Unmeasured — would need a stopwatch against the real
+  screen.
+
+### macOS-side idea: push Apple Music's live lyric line — feasibility only, not started
+
+User asked whether this app could hook Apple Music's currently-playing
+synced lyric line on macOS and push it to the MiniToo via the AVRCP
+mechanism above. Broken into two separate hard problems, neither
+attempted yet:
+
+1. **Reading the current synced lyric line out of Apple Music**: Apple
+   exposes no API for this at all. Music.app's AppleScript dictionary and
+   the private `MediaRemote.framework` (what NowPlaying-style menu-bar
+   utilities use) both give title/artist/elapsed-time, but not the
+   specific line Music.app's own Lyrics panel is currently highlighting.
+   Two candidate approaches, neither tried:
+   - **Accessibility-API screen-scraping** of Music.app's Lyrics view
+     (same mechanism VoiceOver uses) — would read exactly what Apple's UI
+     shows, but unsupported/fragile, could break on any macOS/Music.app
+     update.
+   - **Reimplement sync ourselves**: read title/artist/elapsed-position
+     (easy, scriptable) and independently fetch time-stamped lyrics
+     (`.lrc`-style) from an external source, computing the current line
+     from elapsed time locally. More robust/maintainable, but depends on
+     a third-party lyrics source actually having the track — and pulling
+     copyrighted lyric text from a third-party API is worth a legal-
+     awareness gut-check before building on it, even for personal use.
+2. **Pushing it to the MiniToo over AVRCP without breaking real
+   playback**: mechanically this means setting `MPNowPlayingInfoCenter`'s
+   title from our own app and forcing a fake "track changed" per line
+   (the same trailing-space trick seen in the capture). The real risk:
+   **Apple Music is already the app actually feeding audio to the MiniToo
+   over Bluetooth.** It's not obvious a background app can inject AVRCP
+   metadata without either fighting Music.app for the "current Now
+   Playing app" slot, or needing to run its own silent audio stream to
+   legitimately claim that slot — which risks visibly hijacking Control
+   Center's Now Playing widget or interfering with the actual audio
+   route. This half is the bigger unknown of the two and needs a careful,
+   real hardware test before trusting it with actual music playback.
+
+**Recommended starting point if this gets picked up**: prototype the
+`.lrc`/external-lyrics-source half first (sidesteps Accessibility-API
+fragility), but hardware-test the "claim Now Playing and push a test
+title" half in isolation before wiring the two together, since that's
+where an actual-audio-interruption risk lives. Nothing built yet — this
+is feasibility analysis only.
+
 ## Legacy rescue, second pass
 `project_divoom_minitoo.md` (the old memory file) is being kept as an
 unindexed archive, not deleted — a second look turned up 3 more items
