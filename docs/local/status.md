@@ -25,3 +25,11 @@ PR #11's description was updated with a root-cause sentence (no branch diff
 change). PR #16 is a new standalone upstream docs PR carrying the
 custom-face dead-ends and Bluetooth troubleshooting notes. Device-rename
 docs stay local-only until that feature gets its own PR.
+
+## Upstream PR: Device Settings
+[PR #17](https://github.com/alvinunreal/divoom-minitoo-osx/pull/17) opened
+2026-07-07, `feat/device-settings` branch, cut from `personal`'s tip (same
+pattern as #15) — depends on #2/#4/#6/#7/#10/#11/#12/#13/#14/#15 all
+merging first per its own "Depends on" section. `docs/local/` was
+stripped out of that branch before opening (fork-local content, never
+upstreamed).
