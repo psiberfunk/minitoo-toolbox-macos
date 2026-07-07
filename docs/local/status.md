@@ -19,6 +19,7 @@ log.
 | Alarms (`0x43`/`0x42`) | APK-decoded only, never hardware/capture-verified. |
 | Games (`0xa0`/`0x17`/`0x21`/`0x88`) | Same as Alarms. |
 | Device Settings (`Sys/SetConf`) | **Hardware-tested (2026-07-07)** end-to-end from this app's own UI: temperature unit, date format, clock format (including the `Time24Flag` 0/1↔12h/24h mapping itself), Bluetooth auto-reconnect, remember-power-on-volume, auto power off all confirmed working against a real MiniToo. Notification sound (level slider) confirmed reachable, not independently confirmed audible. No device-side state readback exists for this command (confirmed by direct testing, not just capture absence) — screen caches last-sent values in `UserDefaults` instead, with a `(?)` tooltip explaining that's not a live read. "Shake Shake" and "Tap and Play" confirmed **not** BT-transmitted — Android-local only, not implemented. Known MiniToo firmware quirk: its own on-screen settings menu can show stale text after a change until backed out and re-entered (documented in README.md). See PROTOCOL.md's "Device Settings" section. |
+| App icon | Done (2026-07-07). `assets/AppIcon.icns` (generated from user-supplied `assets/AppIcon-source.jpg`, full macOS size set 16–1024pt @1x/@2x) wired into the bundle via `CFBundleIconFile`; confirmed rendering correctly in Finder (icon-view + Get Info) after an IconServices cache refresh. Regen steps in README.md. |
 
 ## Upstream docs housekeeping
 PR #11's description was updated with a root-cause sentence (no branch diff
