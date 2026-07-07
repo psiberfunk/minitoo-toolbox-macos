@@ -32,6 +32,64 @@ independent of any code change (symptom: every command reports success
 while the device visibly does nothing). Check `ps -ef | grep blueutil` for
 a stuck child before re-blaming the latest code change.
 
+## BT HCI capture workflow (tablet-side cleanup)
+Recurring procedure for pulling a real BT capture (used for atmosphere,
+device-settings, rename-test, lyrics-avrcp-test so far):
+
+1. Quit the Mac daemon/app first — MiniToo only holds one BT connection at
+   a time, and the Android device needs to pair for the test uncontended.
+2. On the Android tablet: Settings → Developer Options → "Enable Bluetooth
+   HCI snoop log" → on. This is a production/`user`-build device
+   (`ro.debuggable=0`, no root) — `adb shell setprop
+   persist.bluetooth.btsnoopenable true` fails with "Failed to set
+   property", so this toggle must be flipped by hand in the UI, not
+   scripted.
+3. Do the test action on the tablet against the MiniToo.
+4. Pull it: `adb bugreport <dest.zip>`, unzip, the capture is at
+   `FS/data/misc/bluetooth/logs/*.cfa.curf` inside (btsnoop format despite
+   the extension — this is an OEM-specific rotation/naming scheme, not
+   stock AOSP's `btsnoop_hci.log`). Copy just that file into
+   `captures/<name>.cfa.curf` following the existing naming convention.
+5. **Turn the HCI snoop log toggle back off on the tablet.** Don't leave
+   it on continuously. Reasoning: AOSP's snoop log is normally a bounded/
+   rotating log so it *shouldn't* flood storage indefinitely, but this
+   tablet uses a non-stock naming scheme (`.cfa.curf`, not
+   `btsnoop_hci.log`) so its actual rotation/cap behavior is unverified —
+   `adb shell ls -la /data/misc/bluetooth/logs/` returns "Permission
+   denied" on this device even when connected (shell UID can't read that
+   path directly; only `adb bugreport`'s elevated collection can). Since
+   we can't confirm the cap, treat it as unbounded and toggle
+   off-when-idle rather than trusting it. Off-by-default also keeps
+   future captures smaller and easier to search (less unrelated BT
+   traffic from other paired devices/background apps).
+
+   **There's no direct way to delete/inspect the log file itself** —
+   `rm`/`ls` on `/data/misc/bluetooth/logs/` both fail with "Permission
+   denied" (bluetooth-UID-owned, not root, and this doesn't change whether
+   the tablet is connected or not). If you ever suspect it's actually
+   accumulating: (a) toggle the snoop log Developer Option off then back
+   on, or (b) reboot the tablet — both force the BT stack to reopen the
+   log file fresh, which is the closest thing to a "clear" available
+   without root. Don't use Settings → Apps → Bluetooth → Clear storage as
+   a fix — that risks wiping paired-device bonds (re-pairing the MiniToo
+   and everything else), disproportionate for a log-size worry. To check
+   whether there's an actual problem before reaching for either fix, use
+   `adb shell df -h` (works fine even though the log directory itself
+   doesn't — different permission scope) and watch the `/data` line's
+   `Avail` trend over time; baseline as of 2026-07-07: 36G free / 26%
+   used.
+6. **Clean up the local Mac-side artifacts once analysis is done.** Each
+   `adb bugreport` pull produces a `.zip` (10-15MB) and, once unzipped, an
+   `_extracted/` directory (40-50MB) — both are working scratch, not
+   referenced by any doc. Only the single `.cfa.curf` pulled out of them
+   is ever cited from PROTOCOL.md/dev-notes.md. Once the capture's been
+   analyzed and findings are written up, delete the `.zip` and
+   `_extracted/` for that session and keep only the `.cfa.curf`:
+   `rm -rf captures/<name>.zip captures/<name>_extracted/`. This is what
+   took `captures/` from 123M down to 11M on 2026-07-07 (two stale
+   zip+extracted pairs from atmosphere and lyrics-avrcp-test cleaned up
+   after their docs were already written).
+
 ## Known gotchas (candidates for PROTOCOL.md/README.md, not yet promoted)
 Rescued from the old chronological memory file before it was deleted;
 still accurate, just not yet moved into the real repo docs — do that as a
