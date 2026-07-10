@@ -18,7 +18,15 @@ if not APP.is_dir():
 files = [str(APP), str(ROOT / "INSTALLING.md")]
 format = "UDZO"
 background = str(ROOT / "assets" / "dmg" / "dmg-background.png")
-window_rect = ((100, 100), (793, 496))
+
+# window_rect's height is the whole Finder window frame, not the content
+# viewport — a plain titled/closable/miniaturizable/resizable window (no
+# toolbar, matching show_toolbar below) reserves 32pt of title bar on top
+# of the content area on this macOS version (measured directly via
+# NSWindow.frameRect(forContentRect:styleMask:), not guessed). Without
+# that allowance the 496pt-tall background doesn't fully fit the content
+# viewport, forcing a vertical scrollbar to see the rest of it.
+window_rect = ((100, 100), (793, 496 + 32))
 default_view = "icon-view"
 show_status_bar = False
 show_tab_view = False

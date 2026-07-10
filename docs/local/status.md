@@ -154,5 +154,17 @@ upstreamed).
   `tools/dmgbuild-settings.py` by adding it to the `hide` setting (forces
   the actual Finder-invisible attribute via `SetFile -a V`, confirmed
   locally with `GetFileInfo`/`ls -lO` showing the flag set) plus an
-  off-canvas `icon_locations` fallback. A fresh human Finder visual check
-  of the next published DMG remains the final confirmation.
+  off-canvas `icon_locations` fallback. Confirmed by the user's own Finder
+  screenshot: the stray icon is gone.
+- **DMG window-size bug found and fixed:** the same visual check showed a
+  vertical scrollbar cutting off the bottom of the background artwork.
+  `window_rect`'s height sets the whole Finder window frame, not the
+  content viewport, and it was set to exactly 496 (the background's
+  height) with no allowance for the title bar. Measured the exact
+  overhead directly via `NSWindow.frameRect(forContentRect:styleMask:)`
+  for this window's style (titled/closable/miniaturizable/resizable, no
+  toolbar): 32pt. Fixed by setting `window_rect` height to `496 + 32`;
+  verified locally by building a test DMG and reading the resulting
+  `.DS_Store`'s `WindowBounds` directly (`{{100, 100}, {793, 528}}`). A
+  fresh human Finder visual check of the next published DMG remains the
+  final confirmation.
