@@ -119,6 +119,10 @@ helper. It shows an explanation and confirmation before clearing quarantine for
 only this app, then opens it. The helper may itself be blocked by Gatekeeper;
 the System Settings route above remains the reliable path.
 
+If Finder blocks that helper, open **Terminal**, drag the `.command` file from
+the release folder into its window, and press Return. That explicitly runs the
+helper in Terminal, where it presents its app-only confirmation dialog.
+
 The accompanying FFmpeg source archive and [third-party notices](THIRD_PARTY_NOTICES.md)
 are included for the bundled video converter.
 

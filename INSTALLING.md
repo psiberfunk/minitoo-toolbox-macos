@@ -38,4 +38,8 @@ password only if macOS denies the normal user-owned-app operation.
 This helper is provided so we can test whether Terminal will launch it smoothly
 on current macOS versions. Because it too was downloaded from the internet,
 Gatekeeper may block the helper before it runs; if so, use **Open Anyway** or
-the Terminal fallback above. It never disables Gatekeeper globally.
+the Terminal fallback above. A simpler way to run the helper is to open
+**Terminal**, drag `Open Divoom MiniToo.command` from the release folder into
+the Terminal window, and press Return. Terminal then runs the helper, which
+shows its own scoped confirmation dialog before changing the app’s quarantine
+attribute. It never disables Gatekeeper globally.
