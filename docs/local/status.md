@@ -165,6 +165,22 @@ upstreamed).
   for this window's style (titled/closable/miniaturizable/resizable, no
   toolbar): 32pt. Fixed by setting `window_rect` height to `496 + 32`;
   verified locally by building a test DMG and reading the resulting
-  `.DS_Store`'s `WindowBounds` directly (`{{100, 100}, {793, 528}}`). A
-  fresh human Finder visual check of the next published DMG remains the
-  final confirmation.
+  `.DS_Store`'s `WindowBounds` directly (`{{100, 100}, {793, 528}}`).
+  Confirmed by the user's own Finder screenshot: the height 32pt fix
+  alone wasn't enough — a large scrollbar remained. Root-caused with the
+  user's Finder access granted this session: their Mac has "show hidden
+  files" on (`defaults read com.apple.finder AppleShowAllFiles` → `1`),
+  which reveals dotfiles *and* Finder-invisible-flagged files alike —
+  there is no OS-level hiding mechanism dmgbuild has that survives that
+  preference, and a shipped DMG has no business trying to override a
+  user's own Finder setting. The actual scrollbar culprit was the
+  `.background.tiff` off-canvas `icon_locations` position added for the
+  earlier fix: any `Iloc` entry, even for a hidden file, expands the icon
+  view's scrollable canvas to include it. Fixed by moving that position
+  inside the visible canvas, at a corner (`(30, 30)`) — for the vast
+  majority of users (hidden files actually hidden) it's irrelevant; for
+  users with the "show hidden files" preference on, it now shows as a
+  small, contained icon in a corner instead of forcing a scroll. Verified
+  directly via a locally built test DMG opened in Finder (with the user
+  present to grant computer-use access): no scrollbar, background fully
+  visible, `.background.tiff` visible only as a small top-left icon.

@@ -40,11 +40,17 @@ icon_locations = {
     "Divoom MiniToo.app": (195, 258),
     "INSTALLING.md": (597, 258),
     # dmgbuild names the compiled HiDPI background ".background.tiff" and
-    # relies solely on the leading dot to hide it — that fails for any user
-    # with Finder's "show hidden files" on (a common developer setting),
-    # and it has no icon_locations entry so Finder auto-places it at the
-    # default top-left grid slot when it is visible. Pin it off-canvas as a
-    # defense-in-depth fallback on top of the explicit `hide` entry below.
-    ".background.tiff": (396, 1200),
+    # relies on the leading dot plus the `hide` setting below (SetFile -a V,
+    # confirmed set) to stay invisible. Neither survives a user's Finder
+    # having "show hidden files" on (AppleShowAllFiles=1) — that reveals
+    # dotfiles AND invisible-flagged files alike, with no OS-level way for
+    # a shipped DMG to override the end user's own Finder preference. So
+    # this position is not a hiding mechanism, just damage control for
+    # that case: keep it inside the visible canvas (unlike an earlier
+    # off-canvas attempt at (396, 1200), which expanded the icon view's
+    # scrollable area and produced a large scrollbar) and out of the way
+    # in a corner, instead of leaving it to Finder's own auto-placement
+    # (which put it far below the fold, again requiring a big scroll).
+    ".background.tiff": (30, 30),
 }
 hide = [".background.tiff"]
