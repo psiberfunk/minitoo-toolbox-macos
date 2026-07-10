@@ -184,3 +184,26 @@ upstreamed).
   directly via a locally built test DMG opened in Finder (with the user
   present to grant computer-use access): no scrollbar, background fully
   visible, `.background.tiff` visible only as a small top-left icon.
+- **DMG window-size bug, round 2 — residual ~1pt crop plus a real Status
+  Bar/Path Bar caveat:** the user methodically compared four states of
+  the same mounted DMG (both bars on; path bar hidden; both hidden;
+  manually resized) and found that even with both bars off, the window
+  still cropped the artwork's border by a hair — manually resizing to
+  793x529 (vs. the shipped 793x528) fixed it completely. Some fixed
+  inset this macOS version's icon view reserves beyond pure window
+  chrome, not accounted for by the earlier NSWindow-based title-bar
+  math. Fixed by adding a small margin: `window_rect` height is now
+  `496 + 32 + 4 = 532`; verified by reading the built DMG's `.DS_Store`
+  directly (`WindowBounds` → `{{100, 100}, {793, 532}}`) and visually
+  confirming the corner border renders complete. Separately confirmed
+  (both by the user's own toggling and an independent test): Finder's
+  Status Bar/Path Bar are real, user-controlled via the View menu, and
+  when on they visibly consume space from this same fixed-size content
+  area rather than growing the window to compensate — dmgbuild's
+  `show_status_bar`/`show_pathbar` settings have no effect on this macOS
+  version (confirmed via an A/B test: forcing both `True` rendered
+  identically to `False`), and there is no way to override the user's
+  own global Finder preference from inside a shipped DMG. Users who keep
+  those bars on will see the bottom of the artwork cropped by whatever
+  the bars' combined height is; this is a known, accepted limitation,
+  not yet fixed with extra padding for that case.

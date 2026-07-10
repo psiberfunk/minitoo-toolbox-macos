@@ -20,13 +20,23 @@ format = "UDZO"
 background = str(ROOT / "assets" / "dmg" / "dmg-background.png")
 
 # window_rect's height is the whole Finder window frame, not the content
-# viewport — a plain titled/closable/miniaturizable/resizable window (no
-# toolbar, matching show_toolbar below) reserves 32pt of title bar on top
-# of the content area on this macOS version (measured directly via
-# NSWindow.frameRect(forContentRect:styleMask:), not guessed). Without
-# that allowance the 496pt-tall background doesn't fully fit the content
-# viewport, forcing a vertical scrollbar to see the rest of it.
-window_rect = ((100, 100), (793, 496 + 32))
+# viewport. A plain titled/closable/miniaturizable/resizable window with
+# no toolbar reserves 32pt of title bar on top of the content area on this
+# macOS version (measured via NSWindow.frameRect(forContentRect:styleMask:)),
+# but that alone still left a ~1pt residual crop on the background's edge
+# border even with Status Bar/Path Bar off (confirmed by manually resizing
+# a real mounted copy until the crop disappeared: 793x529 was the minimum,
+# vs. 793x528 from the title-bar math alone) — some additional fixed inset
+# this macOS version's icon view reserves beyond pure window chrome.
+# +4 covers that plus a small margin. This does NOT cover the case where
+# the user's Finder has Status Bar/Path Bar on: those are the user's own
+# global View-menu preference, not a per-window .DS_Store setting despite
+# show_status_bar/show_pathbar below (confirmed ineffective by an A/B
+# test — building with both forced True rendered identically to False).
+# When shown, they visibly consume space from this same fixed-size
+# content area rather than growing the window to compensate, cropping the
+# bottom of the artwork for users who have them on.
+window_rect = ((100, 100), (793, 496 + 32 + 4))
 default_view = "icon-view"
 show_status_bar = False
 show_tab_view = False
