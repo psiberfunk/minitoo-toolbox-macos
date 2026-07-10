@@ -131,8 +131,9 @@ upstreamed).
   Technical CI assembly/publication is now complete; an independent real-Mac
   install/launch/scan/send test and the separate upstream distribution-rights
   decision remain before broad public distribution.
-- **Later CI optimization (after a green end-to-end release):** cache the
-  compiled FFmpeg binary separately for each architecture, keyed by its source
-  version and build-script/configuration hash, plus the pip download cache.
-  Do not cache `.venv`, FFmpeg intermediates, Homebrew, or release artifacts.
-  An explicit cache revision provides a deliberate invalidation switch.
+- **CI cache optimization (implemented; first cache-warming run pending):**
+  cache the validated FFmpeg binary/source archive separately for each
+  architecture, keyed by source version and build-script/configuration hash,
+  plus the pip download cache. Do not cache `.venv`, FFmpeg intermediates,
+  Homebrew, or release artifacts. `ffmpeg-cache-v1` is the deliberate
+  invalidation switch.

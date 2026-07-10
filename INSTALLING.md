@@ -27,3 +27,15 @@ open "/Applications/Divoom MiniToo.app"
 This is intentionally shown as a command you run yourself rather than a
 clickable bypass script. A downloaded script is itself subject to Gatekeeper,
 and it should not silently weaken a Mac's security controls.
+
+## Optional convenience helper (experimental)
+
+The release folder also contains `Open Divoom MiniToo.command`. Double-clicking
+it explains exactly what it will do, asks for confirmation, removes quarantine
+from only Divoom MiniToo, and opens the app. It requests an administrator
+password only if macOS denies the normal user-owned-app operation.
+
+This helper is provided so we can test whether Terminal will launch it smoothly
+on current macOS versions. Because it too was downloaded from the internet,
+Gatekeeper may block the helper before it runs; if so, use **Open Anyway** or
+the Terminal fallback above. It never disables Gatekeeper globally.

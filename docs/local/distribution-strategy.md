@@ -55,16 +55,16 @@ universal ZIP, SHA-256 file, and matching FFmpeg source archive to the rolling
 
 ### Later CI optimization: deterministic dependency caches
 
-After a complete release run is green, cache the expensive, deterministic
-parts of the hosted build. The priority is the per-architecture compiled
-FFmpeg binary (and its source archive), keyed by architecture, FFmpeg version,
-an explicit cache revision, and the hash of `tools/build-ffmpeg.sh`. Add the
-normal pip download cache as well. Do **not** cache `.venv`, the FFmpeg build
-tree, Homebrew, or final app/release artifacts: those are runner/path-sensitive,
-too large for the value, or are already handled as artifacts. The build script
-must validate a restored FFmpeg binary and build normally on a cache miss.
-Increment the cache revision to deliberately invalidate all FFmpeg caches.
-Caching is an optional speed-up, never a dependency for a reproducible build.
+The hosted workflow now caches the per-architecture compiled FFmpeg binary and
+its source archive, plus pip downloads. The FFmpeg key includes architecture,
+source version, an explicit cache revision, and the hash of
+`tools/build-ffmpeg.sh`; its manifest additionally validates the source
+version, architecture, recipe hash, and executable before a cache hit is used.
+Do **not** cache `.venv`, the FFmpeg build tree, Homebrew, or final
+app/release artifacts: those are runner/path-sensitive, too large for the
+value, or are already handled as artifacts. Increment `ffmpeg-cache-v1` in
+the workflow to deliberately invalidate all FFmpeg caches. Caching is an
+optional speed-up, never a dependency for a reproducible build.
 
 ### CI monitoring rule
 

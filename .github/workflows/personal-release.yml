@@ -32,16 +32,26 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-build.txt
       - name: Create the bundled Python environment
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install -r requirements-app.txt PyInstaller
+          .venv/bin/python -m pip install -r requirements-build.txt
       - name: Freeze Python helpers
         run: bash tools/freeze-python-tools.sh
       - name: Install NASM for optimized Intel FFmpeg
         if: matrix.arch == 'x86_64'
         run: brew install nasm
+      - name: Restore/cache validated FFmpeg
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/ffmpeg/ffmpeg
+            build/ffmpeg/ffmpeg-8.1.2.tar.xz
+            build/ffmpeg/.cache-manifest
+          key: ffmpeg-cache-v1-${{ matrix.arch }}-ffmpeg-8.1.2-${{ hashFiles('tools/build-ffmpeg.sh') }}
       - name: Build LGPL-only FFmpeg
         run: bash tools/build-ffmpeg.sh
       - name: Build native app slice
@@ -117,6 +127,8 @@ jobs:
           mkdir "Divoom MiniToo Release"
           ditto "Divoom MiniToo.app" "Divoom MiniToo Release/Divoom MiniToo.app"
           cp INSTALLING.md "Divoom MiniToo Release/INSTALLING.md"
+          cp "Open Divoom MiniToo.command" "Divoom MiniToo Release/Open Divoom MiniToo.command"
+          chmod +x "Divoom MiniToo Release/Open Divoom MiniToo.command"
           ditto -c -k --sequesterRsrc --keepParent \
             "Divoom MiniToo Release" Divoom-MiniToo-macos-universal.zip
           shasum -a 256 Divoom-MiniToo-macos-universal.zip > Divoom-MiniToo-macos-universal.zip.sha256

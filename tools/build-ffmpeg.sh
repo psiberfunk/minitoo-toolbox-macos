@@ -8,11 +8,29 @@ VERSION="${FFMPEG_VERSION:-8.1.2}"
 BUILD="$ROOT/build/ffmpeg"
 SOURCE_ARCHIVE="$BUILD/ffmpeg-$VERSION.tar.xz"
 SOURCE_DIR="$BUILD/ffmpeg-$VERSION"
+OUTPUT="$BUILD/ffmpeg"
+CACHE_MANIFEST="$BUILD/.cache-manifest"
+BUILD_SCRIPT_HASH="$(shasum -a 256 "$0" | awk '{print $1}')"
+BUILD_ARCH="$(uname -m)"
+
+cache_is_valid() {
+  [[ -x "$OUTPUT" && -f "$CACHE_MANIFEST" ]] || return 1
+  grep -Fxq "version=$VERSION" "$CACHE_MANIFEST" || return 1
+  grep -Fxq "architecture=$BUILD_ARCH" "$CACHE_MANIFEST" || return 1
+  grep -Fxq "build_script_sha256=$BUILD_SCRIPT_HASH" "$CACHE_MANIFEST" || return 1
+  "$OUTPUT" -version 2>/dev/null | head -n 1 | grep -Fq "ffmpeg version $VERSION" || return 1
+  lipo -archs "$OUTPUT" | tr ' ' '\n' | grep -Fxq "$BUILD_ARCH" || return 1
+}
 
 mkdir -p "$BUILD"
 if [[ ! -f "$SOURCE_ARCHIVE" ]]; then
   curl --fail --location --retry 3 "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz" -o "$SOURCE_ARCHIVE"
 fi
+if cache_is_valid; then
+  echo "Using validated cached FFmpeg $VERSION ($BUILD_ARCH)."
+  exit 0
+fi
+rm -f "$OUTPUT" "$CACHE_MANIFEST"
 rm -rf "$SOURCE_DIR"
 tar -xf "$SOURCE_ARCHIVE" -C "$BUILD"
 pushd "$SOURCE_DIR" >/dev/null
@@ -23,4 +41,10 @@ configure_args=(
 ./configure "${configure_args[@]}"
 make -j"$(sysctl -n hw.ncpu)"
 popd >/dev/null
-cp "$SOURCE_DIR/ffmpeg" "$BUILD/ffmpeg"
+cp "$SOURCE_DIR/ffmpeg" "$OUTPUT"
+{
+  printf 'version=%s\n' "$VERSION"
+  printf 'architecture=%s\n' "$BUILD_ARCH"
+  printf 'build_script_sha256=%s\n' "$BUILD_SCRIPT_HASH"
+  printf 'binary_sha256=%s\n' "$(shasum -a 256 "$OUTPUT" | awk '{print $1}')"
+} > "$CACHE_MANIFEST"

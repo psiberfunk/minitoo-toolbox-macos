@@ -114,6 +114,11 @@ every macOS version. If that button is unavailable, the user-run `xattr`
 fallback is in [INSTALLING.md](INSTALLING.md). Bluetooth permission is
 requested by macOS when needed.
 
+The release folder also includes an experimental **Open Divoom MiniToo.command**
+helper. It shows an explanation and confirmation before clearing quarantine for
+only this app, then opens it. The helper may itself be blocked by Gatekeeper;
+the System Settings route above remains the reliable path.
+
 The accompanying FFmpeg source archive and [third-party notices](THIRD_PARTY_NOTICES.md)
 are included for the bundled video converter.
 
