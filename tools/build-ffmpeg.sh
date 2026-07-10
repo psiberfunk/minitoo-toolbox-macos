@@ -16,8 +16,11 @@ fi
 rm -rf "$SOURCE_DIR"
 tar -xf "$SOURCE_ARCHIVE" -C "$BUILD"
 pushd "$SOURCE_DIR" >/dev/null
-./configure --disable-gpl --disable-nonfree --disable-debug --disable-doc --disable-ffplay \
+configure_args=(
+  --disable-gpl --disable-nonfree --disable-debug --disable-doc --disable-ffplay
   --disable-network --disable-shared --enable-static --disable-programs --enable-ffmpeg
+)
+./configure "${configure_args[@]}"
 make -j"$(sysctl -n hw.ncpu)"
 popd >/dev/null
 cp "$SOURCE_DIR/ffmpeg" "$BUILD/ffmpeg"

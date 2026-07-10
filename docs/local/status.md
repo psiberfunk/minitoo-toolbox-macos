@@ -105,6 +105,10 @@ upstreamed).
   Send Media's live `0x8b` zstd chunked-stream protocol. Several additional
   menu functions appeared to work in exploratory testing; record any specific
   failures before marking individual behaviors hardware-verified.
+- First GitHub Actions run (`29100401008`) failed before release assembly:
+  Apple Silicon exited during no-identity signing lookup (not Python/venv),
+  and Intel FFmpeg configure required missing NASM. Both workflow/build-script
+  issues are corrected; the next push must validate the hosted build.
 - Final pre-release local check: normal Send Media and nearby-unpaired
   discovery pass; the White Noise display-mode behavior is accepted for the
   alpha. The next gate is the first GitHub Actions build and its generated

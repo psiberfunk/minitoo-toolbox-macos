@@ -13,3 +13,7 @@ This configuration intentionally excludes GPL and nonfree components. FFmpeg
 is used under LGPL v2.1 or later. Each release that bundles the executable
 also attaches the exact corresponding `ffmpeg-8.1.2.tar.xz` source archive.
 Source: https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz
+
+Intel macOS CI installs NASM before the FFmpeg build so FFmpeg can retain its
+normal optimized x86 assembly path. NASM is a build-only tool and is not
+bundled with the app.

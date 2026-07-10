@@ -148,7 +148,9 @@ PLIST
 # stable (non-ad-hoc) identity keeps the same Team ID across rebuilds, so
 # macOS TCC recognizes the app as the same requester and doesn't re-prompt
 # for Bluetooth access every time the binary is recompiled and re-signed.
-SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -m1 -oE '"[^"]+"' | tr -d '"')"
+# On CI no signing identity is expected. With pipefail enabled, grep's normal
+# "no match" status must not abort packaging before the ad-hoc fallback.
+SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -m1 -oE '"[^"]+"' | tr -d '"' || true)"
 if [[ -n "$SIGNING_IDENTITY" ]]; then
   echo "Signing app with $SIGNING_IDENTITY..."
   codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP" >/dev/null

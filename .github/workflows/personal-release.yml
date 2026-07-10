@@ -39,10 +39,24 @@ jobs:
           .venv/bin/python -m pip install -r requirements-app.txt PyInstaller
       - name: Freeze Python helpers
         run: bash tools/freeze-python-tools.sh
+      - name: Install NASM for optimized Intel FFmpeg
+        if: matrix.arch == 'x86_64'
+        run: brew install nasm
       - name: Build LGPL-only FFmpeg
         run: bash tools/build-ffmpeg.sh
       - name: Build native app slice
-        run: DIVOOM_ARCHS=${{ matrix.arch }} DIVOOM_APP_VERSION="0.1.0-alpha.${GITHUB_RUN_NUMBER}" DIVOOM_BUILD_VERSION="${GITHUB_RUN_NUMBER}" bash tools/build-divoom-app.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          DIVOOM_ARCHS=${{ matrix.arch }} DIVOOM_APP_VERSION="0.1.0-alpha.${GITHUB_RUN_NUMBER}" DIVOOM_BUILD_VERSION="${GITHUB_RUN_NUMBER}" bash -x tools/build-divoom-app.sh 2>&1 | tee build-divoom-app.log
+      - name: Preserve native build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-divoom-app-log-${{ matrix.arch }}
+          path: build-divoom-app.log
+          retention-days: 7
+          if-no-files-found: warn
       - name: Archive native app slice
         run: |
           ditto -c -k --sequesterRsrc --keepParent \

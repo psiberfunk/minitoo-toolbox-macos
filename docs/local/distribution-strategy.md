@@ -23,6 +23,16 @@ Publish a self-contained universal macOS app from every push to `personal`.
    validation of both hosted macOS architectures, frozen helpers, FFmpeg
    builds, release permissions, and universal assembly.
 
+### First CI failure and correction
+
+Run `29100401008` failed before release assembly for two unrelated reasons:
+the Apple Silicon package script treated the expected absence of a signing
+identity as fatal under `pipefail`, and the Intel FFmpeg configure expected
+NASM, which the hosted runner lacks. The signing lookup now permits the
+existing ad-hoc fallback; Intel CI installs NASM before building FFmpeg, which
+retains its normal optimized x86 path. Native app build logs are retained for
+seven days on future failed runs.
+
 ## Required physical checklist
 
 - New install: first-run scan finds the MiniToo.
