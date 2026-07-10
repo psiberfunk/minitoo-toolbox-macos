@@ -126,7 +126,7 @@ upstreamed).
   same-path `mv` after Intel extraction. The no-op is removed; next run tests
   the remaining assembly/sign/release stages.
 - Third GitHub Actions run (`29113738061`) **succeeded** on 2026-07-10. It
-  published the ad-hoc-signed universal ZIP, SHA-256 checksum, and matching
+  published the ad-hoc-signed universal release, SHA-256 checksum, and matching
   FFmpeg 8.1.2 source archive to the rolling `personal-latest` prerelease.
   Technical CI assembly/publication is now complete; an independent real-Mac
   install/launch/scan/send test and the separate upstream distribution-rights

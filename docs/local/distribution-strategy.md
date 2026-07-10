@@ -50,7 +50,7 @@ assembly because the workflow attempted to rename the extracted Intel app to
 the exact same path. That no-op is removed; the next push validates assembly,
 ad-hoc signing, artifact upload, and release publication. The third run
 (`29113738061`) completed successfully on 2026-07-10 and published the
-universal ZIP, SHA-256 file, and matching FFmpeg source archive to the rolling
+universal release, SHA-256 file, and matching FFmpeg source archive to the rolling
 `personal-latest` prerelease.
 
 ### Later CI optimization: deterministic dependency caches

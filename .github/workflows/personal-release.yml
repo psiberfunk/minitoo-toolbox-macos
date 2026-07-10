@@ -127,17 +127,15 @@ jobs:
           mkdir "Divoom MiniToo Release"
           ditto "Divoom MiniToo.app" "Divoom MiniToo Release/Divoom MiniToo.app"
           cp INSTALLING.md "Divoom MiniToo Release/INSTALLING.md"
-          cp "Open Divoom MiniToo.command" "Divoom MiniToo Release/Open Divoom MiniToo.command"
-          chmod +x "Divoom MiniToo Release/Open Divoom MiniToo.command"
-          ditto -c -k --sequesterRsrc --keepParent \
-            "Divoom MiniToo Release" Divoom-MiniToo-macos-universal.zip
-          shasum -a 256 Divoom-MiniToo-macos-universal.zip > Divoom-MiniToo-macos-universal.zip.sha256
+          hdiutil create -volname "Divoom MiniToo" -srcfolder "Divoom MiniToo Release" \
+            -ov -format UDZO Divoom-MiniToo-macos-universal.dmg
+          shasum -a 256 Divoom-MiniToo-macos-universal.dmg > Divoom-MiniToo-macos-universal.dmg.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: Divoom-MiniToo-macos-universal
           path: |
-            Divoom-MiniToo-macos-universal.zip
-            Divoom-MiniToo-macos-universal.zip.sha256
+            Divoom-MiniToo-macos-universal.dmg
+            Divoom-MiniToo-macos-universal.dmg.sha256
             ffmpeg-source/ffmpeg-8.1.2.tar.xz
           retention-days: 30
       - name: Publish rolling prerelease
@@ -145,8 +143,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view personal-latest >/dev/null 2>&1; then
-            gh release upload personal-latest Divoom-MiniToo-macos-universal.zip Divoom-MiniToo-macos-universal.zip.sha256 ffmpeg-source/ffmpeg-8.1.2.tar.xz --clobber
+            # The user-facing artifact changed from ZIP to DMG. Remove stale
+            # ZIP assets so each rolling release has one unambiguous download.
+            gh release delete-asset personal-latest Divoom-MiniToo-macos-universal.zip Divoom-MiniToo-macos-universal.zip.sha256 --yes || true
+            gh release upload personal-latest Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 ffmpeg-source/ffmpeg-8.1.2.tar.xz --clobber
             gh release edit personal-latest --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
           else
-            gh release create personal-latest Divoom-MiniToo-macos-universal.zip Divoom-MiniToo-macos-universal.zip.sha256 ffmpeg-source/ffmpeg-8.1.2.tar.xz --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
+            gh release create personal-latest Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 ffmpeg-source/ffmpeg-8.1.2.tar.xz --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
           fi

@@ -80,7 +80,7 @@ DIVOOM_ARCHS="arm64 x86_64" tools/build-divoom-app.sh
 ```
 
 The `personal` branch's GitHub Actions workflow builds the two slices on
-their native runners and publishes one universal ZIP to the rolling
+their native runners and publishes one universal DMG to the rolling
 `personal-latest` prerelease.
 
 This builds:
@@ -104,24 +104,14 @@ On launch, the app:
 
 ## Installing a release build
 
-Download and unzip `Divoom-MiniToo-macos-universal.zip`, open the **Divoom
-MiniToo Release** folder, then drag **Divoom MiniToo.app** into Applications.
-Releases are currently ad-hoc signed and not notarized. After the first blocked
-launch, use **System Settings → Privacy & Security → Open Anyway** (the button
-appears for about an hour), then confirm **Open**. This is the reliable
-Gatekeeper override; Control-clicking alone may not present the override on
-every macOS version. If that button is unavailable, the user-run `xattr`
-fallback is in [INSTALLING.md](INSTALLING.md). Bluetooth permission is
+Download and open `Divoom-MiniToo-macos-universal.dmg`, then drag **Divoom
+MiniToo.app** into Applications. Releases are currently ad-hoc signed and not
+notarized. The shortest first-launch path is the two-line Terminal command in
+[INSTALLING.md](INSTALLING.md), which removes quarantine from this app only and
+opens it. If the user prefers not to use Terminal, try opening the app once,
+then use **System Settings → Privacy & Security → Open Anyway** (the button
+appears for about an hour) and confirm **Open**. Bluetooth permission is
 requested by macOS when needed.
-
-The release folder also includes an experimental **Open Divoom MiniToo.command**
-helper. It shows an explanation and confirmation before clearing quarantine for
-only this app, then opens it. The helper may itself be blocked by Gatekeeper;
-the System Settings route above remains the reliable path.
-
-If Finder blocks that helper, open **Terminal**, drag the `.command` file from
-the release folder into its window, and press Return. That explicitly runs the
-helper in Terminal, where it presents its app-only confirmation dialog.
 
 The accompanying FFmpeg source archive and [third-party notices](THIRD_PARTY_NOTICES.md)
 are included for the bundled video converter.

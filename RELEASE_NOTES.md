@@ -14,11 +14,8 @@ This is an early personal alpha build for macOS 12 and later.
   animation frames.
 - White Noise transport works; its display-mode behavior is accepted as-is.
 
-The app is ad-hoc signed and not notarized. On first launch, try to open it,
-then use **System Settings → Privacy & Security → Open Anyway** and confirm
-**Open**. See the included `INSTALLING.md` for the user-run Terminal fallback
-if that button is unavailable. The release folder also includes an experimental
-`Open Divoom MiniToo.command` convenience helper: it explains and confirms its
-app-only quarantine removal, but may itself be blocked by Gatekeeper. If Finder
-blocks it, open **Terminal**, drag the `.command` file into its window, and
-press Return to launch that confirmed helper there.
+The app is ad-hoc signed and not notarized. After dragging it from the DMG to
+Applications, use the short Terminal command in the included `INSTALLING.md` to
+remove quarantine from this app only and launch it. Alternatively, try opening
+the app once, then use **System Settings → Privacy & Security → Open Anyway**
+and confirm **Open**.
