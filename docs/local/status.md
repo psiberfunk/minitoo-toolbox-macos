@@ -125,3 +125,14 @@ upstreamed).
   slices successfully; it failed only during universal assembly on an invalid
   same-path `mv` after Intel extraction. The no-op is removed; next run tests
   the remaining assembly/sign/release stages.
+- Third GitHub Actions run (`29113738061`) **succeeded** on 2026-07-10. It
+  published the ad-hoc-signed universal ZIP, SHA-256 checksum, and matching
+  FFmpeg 8.1.2 source archive to the rolling `personal-latest` prerelease.
+  Technical CI assembly/publication is now complete; an independent real-Mac
+  install/launch/scan/send test and the separate upstream distribution-rights
+  decision remain before broad public distribution.
+- **Later CI optimization (after a green end-to-end release):** cache the
+  compiled FFmpeg binary separately for each architecture, keyed by its source
+  version and build-script/configuration hash, plus the pip download cache.
+  Do not cache `.venv`, FFmpeg intermediates, Homebrew, or release artifacts.
+  An explicit cache revision provides a deliberate invalidation switch.

@@ -113,8 +113,12 @@ jobs:
             "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg" \
             -output "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg"
           codesign --force --deep --sign - "Divoom MiniToo.app"
+          rm -rf "Divoom MiniToo Release"
+          mkdir "Divoom MiniToo Release"
+          ditto "Divoom MiniToo.app" "Divoom MiniToo Release/Divoom MiniToo.app"
+          cp INSTALLING.md "Divoom MiniToo Release/INSTALLING.md"
           ditto -c -k --sequesterRsrc --keepParent \
-            "Divoom MiniToo.app" Divoom-MiniToo-macos-universal.zip
+            "Divoom MiniToo Release" Divoom-MiniToo-macos-universal.zip
           shasum -a 256 Divoom-MiniToo-macos-universal.zip > Divoom-MiniToo-macos-universal.zip.sha256
       - uses: actions/upload-artifact@v4
         with:

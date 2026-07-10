@@ -104,10 +104,14 @@ On launch, the app:
 
 ## Installing a release build
 
-Download and unzip `Divoom-MiniToo-macos-universal.zip`, then drag **Divoom
-MiniToo.app** into Applications. Releases are currently ad-hoc signed and not
-notarized. On the first launch, macOS may block it; Control-click the app,
-choose **Open**, then confirm **Open** in the dialog. Bluetooth permission is
+Download and unzip `Divoom-MiniToo-macos-universal.zip`, open the **Divoom
+MiniToo Release** folder, then drag **Divoom MiniToo.app** into Applications.
+Releases are currently ad-hoc signed and not notarized. After the first blocked
+launch, use **System Settings → Privacy & Security → Open Anyway** (the button
+appears for about an hour), then confirm **Open**. This is the reliable
+Gatekeeper override; Control-clicking alone may not present the override on
+every macOS version. If that button is unavailable, the user-run `xattr`
+fallback is in [INSTALLING.md](INSTALLING.md). Bluetooth permission is
 requested by macOS when needed.
 
 The accompanying FFmpeg source archive and [third-party notices](THIRD_PARTY_NOTICES.md)

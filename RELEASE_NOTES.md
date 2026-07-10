@@ -14,5 +14,7 @@ This is an early personal alpha build for macOS 12 and later.
   animation frames.
 - White Noise transport works; its display-mode behavior is accepted as-is.
 
-The app is ad-hoc signed and not notarized. On first launch, Control-click the
-app, choose **Open**, and confirm the macOS dialog.
+The app is ad-hoc signed and not notarized. On first launch, try to open it,
+then use **System Settings → Privacy & Security → Open Anyway** and confirm
+**Open**. See the included `INSTALLING.md` for the user-run Terminal fallback
+if that button is unavailable.

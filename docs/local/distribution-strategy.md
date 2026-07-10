@@ -27,7 +27,8 @@ lives in `docs/local/branch-workflow.md`.
    require final physical confirmation.**
 3. Bundle FFmpeg as a separate LGPL-only executable. The release workflow
    builds it with GPL/nonfree features disabled and attaches the exact source
-   archive with each release. **Implemented in workflow; needs first CI run.**
+   archive with each release. **Implemented and published by the first
+   successful CI release.**
 4. Publish the rolling `personal-latest` prerelease only after the local
    hardware checklist below passes. The first push is also the first real CI
    validation of both hosted macOS architectures, frozen helpers, FFmpeg
@@ -47,7 +48,34 @@ The corrected second run (`29112757315`) successfully built both architecture
 slices, including Intel FFmpeg with NASM. It then failed only in universal
 assembly because the workflow attempted to rename the extracted Intel app to
 the exact same path. That no-op is removed; the next push validates assembly,
-ad-hoc signing, artifact upload, and release publication.
+ad-hoc signing, artifact upload, and release publication. The third run
+(`29113738061`) completed successfully on 2026-07-10 and published the
+universal ZIP, SHA-256 file, and matching FFmpeg source archive to the rolling
+`personal-latest` prerelease.
+
+### Later CI optimization: deterministic dependency caches
+
+After a complete release run is green, cache the expensive, deterministic
+parts of the hosted build. The priority is the per-architecture compiled
+FFmpeg binary (and its source archive), keyed by architecture, FFmpeg version,
+an explicit cache revision, and the hash of `tools/build-ffmpeg.sh`. Add the
+normal pip download cache as well. Do **not** cache `.venv`, the FFmpeg build
+tree, Homebrew, or final app/release artifacts: those are runner/path-sensitive,
+too large for the value, or are already handled as artifacts. The build script
+must validate a restored FFmpeg binary and build normally on a cache miss.
+Increment the cache revision to deliberately invalidate all FFmpeg caches.
+Caching is an optional speed-up, never a dependency for a reproducible build.
+
+### CI monitoring rule
+
+The agent that triggers a personal-release workflow owns its outcome: it polls
+that run using concise status checks until success or failure, then immediately
+retrieves and diagnoses any failing job log. It must not simply start a build
+and rely on the user to return with the result. This is also a standing
+workspace instruction in `../AGENTS.md` so it applies in later sessions and to
+all agents working in this project. If an agent cannot remain active or create
+a persistent monitor in its current surface, it must state that limitation
+before handing off.
 
 ## Required physical checklist
 
