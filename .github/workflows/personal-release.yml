@@ -1,0 +1,123 @@
+name: Build personal macOS app
+
+on:
+  push:
+    branches: [personal]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: personal-release
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }} slice
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            label: Apple Silicon
+            runner: macos-15
+          - arch: x86_64
+            label: Intel
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Create the bundled Python environment
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-app.txt PyInstaller
+      - name: Freeze Python helpers
+        run: bash tools/freeze-python-tools.sh
+      - name: Build LGPL-only FFmpeg
+        run: bash tools/build-ffmpeg.sh
+      - name: Build native app slice
+        run: DIVOOM_ARCHS=${{ matrix.arch }} DIVOOM_APP_VERSION="0.1.0-alpha.${GITHUB_RUN_NUMBER}" DIVOOM_BUILD_VERSION="${GITHUB_RUN_NUMBER}" bash tools/build-divoom-app.sh
+      - name: Archive native app slice
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            "build/Divoom MiniToo.app" "Divoom-MiniToo-${{ matrix.arch }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Divoom-MiniToo-${{ matrix.arch }}
+          path: Divoom-MiniToo-${{ matrix.arch }}.zip
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: matrix.arch == 'arm64'
+        with:
+          name: ffmpeg-8.1.2-source
+          path: build/ffmpeg/ffmpeg-8.1.2.tar.xz
+          retention-days: 30
+
+  release:
+    name: Assemble and publish universal app
+    needs: build
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v5
+        with:
+          name: Divoom-MiniToo-arm64
+          path: arm64
+      - uses: actions/download-artifact@v5
+        with:
+          name: Divoom-MiniToo-x86_64
+          path: x86_64
+      - uses: actions/download-artifact@v5
+        with:
+          name: ffmpeg-8.1.2-source
+          path: ffmpeg-source
+      - name: Combine architecture-specific resources and binaries
+        run: |
+          ditto -x -k arm64/Divoom-MiniToo-arm64.zip .
+          mv "Divoom MiniToo.app" arm64.app
+          ditto -x -k x86_64/Divoom-MiniToo-x86_64.zip .
+          mv "Divoom MiniToo.app" "Divoom MiniToo.app"
+          # Each build already places its helper in its architecture directory.
+          # Start from the Intel app and copy the Apple Silicon helper beside it.
+          ditto "arm64.app/Contents/Resources/tools/arm64" "Divoom MiniToo.app/Contents/Resources/tools/arm64"
+          lipo -create \
+            "arm64.app/Contents/MacOS/DivoomMiniToo" \
+            "Divoom MiniToo.app/Contents/MacOS/DivoomMiniToo" \
+            -output "Divoom MiniToo.app/Contents/MacOS/DivoomMiniToo"
+          lipo -create \
+            "arm64.app/Contents/Resources/tools/divoom-daemon" \
+            "Divoom MiniToo.app/Contents/Resources/tools/divoom-daemon" \
+            -output "Divoom MiniToo.app/Contents/Resources/tools/divoom-daemon"
+          lipo -create \
+            "arm64.app/Contents/Resources/tools/ffmpeg" \
+            "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg" \
+            -output "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg"
+          codesign --force --deep --sign - "Divoom MiniToo.app"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "Divoom MiniToo.app" Divoom-MiniToo-macos-universal.zip
+          shasum -a 256 Divoom-MiniToo-macos-universal.zip > Divoom-MiniToo-macos-universal.zip.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Divoom-MiniToo-macos-universal
+          path: |
+            Divoom-MiniToo-macos-universal.zip
+            Divoom-MiniToo-macos-universal.zip.sha256
+            ffmpeg-source/ffmpeg-8.1.2.tar.xz
+          retention-days: 30
+      - name: Publish rolling prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view personal-latest >/dev/null 2>&1; then
+            gh release upload personal-latest Divoom-MiniToo-macos-universal.zip Divoom-MiniToo-macos-universal.zip.sha256 ffmpeg-source/ffmpeg-8.1.2.tar.xz --clobber
+            gh release edit personal-latest --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
+          else
+            gh release create personal-latest Divoom-MiniToo-macos-universal.zip Divoom-MiniToo-macos-universal.zip.sha256 ffmpeg-source/ffmpeg-8.1.2.tar.xz --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
+          fi

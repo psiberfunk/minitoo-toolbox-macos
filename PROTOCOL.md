@@ -2,16 +2,21 @@
 
 Notes from reversing the Divoom Android app + Android Bluetooth snoop captures, then validating sends from macOS.
 
-## ⚠️ Safety: opcodes that brick the device until power-cycle
+## ⚠️ Safety: sleep-control opcodes reported to require a power-cycle
 
-Cross-referenced from independent community reverse-engineering
+Independent community reverse-engineering
 ([bugzmanov/divoom-minitoo](https://github.com/bugzmanov/divoom-minitoo))
-and confirmed as real (if MiniToo-hostile) commands in a generic Divoom
-device map ([d03n3rfr1tz3/hass-divoom](https://github.com/d03n3rfr1tz3/hass-divoom)):
-sending these opcodes to a MiniToo puts it into a black-screen "sleep
-monitoring" state that does **not** respond to any recovery command
+and a generic Divoom device map
+([d03n3rfr1tz3/hass-divoom](https://github.com/d03n3rfr1tz3/hass-divoom))
+report that these opcodes can put a MiniToo into a black-screen "sleep
+monitoring" state that does **not** respond to recovery commands
 (`Channel/OnOffScreen`, `Lyric/Enter`, `Photo/Enter`, `Channel/SetBrightness`,
 game-exit, screen-ctrl) — only a **hardware power-cycle** recovers it.
+
+This specific failure has **not** been observed firsthand in this project;
+the claim remains externally sourced. Treat it as a safety interlock, not a
+hardware-verified result, until a deliberately planned capture-first test is
+authorized and physically observed.
 
 **Never send:** `0x40` (set sleep auto off), `0xa3` (set sleep scene listen),
 `0xa4` (set scene vol), `0xad` (set sleep color), `0xae` (set sleep light).
@@ -310,7 +315,15 @@ Practical rules:
 - Do not activate a custom face after upload unless you intentionally want to switch away from the uploaded animation; doing so can make the animation appear only briefly.
 - Posterizing/noise reduction helps MP4-derived video compress more like phone GIFs. `posterize-bits=4` is fast/small; `posterize-bits=5` has better color but larger transfer.
 - More frames increase both duration and transfer time. A good balance is around `20` frames at `100ms` (`~2s`).
-- `--full-screen` (160x128, ~25% more pixels than 128x128) works for video/GIF too, hardware-confirmed; the profiles below were tuned at 128x128, so expect proportionally larger/slower transfers at full screen and adjust `--max-frames`/`--posterize-bits` down if needed.
+- **Safety hold (2026-07-10):** a 160x128 still-image send produced no final
+  ACK and was reported by the user to crash the MiniToo, despite earlier
+  full-screen tests succeeding in an earlier version of this app. The menu UI
+  disables full-screen sends pending a **regression diff**, not a new Android
+  capture: reproduce the same input through the last known-good app build and
+  the current build, then compare their generated payload and length-prefixed
+  packet files byte-for-byte (header fields, zstd output, chunk boundaries,
+  delays, and daemon submission). Do not send `--full-screen` payloads during
+  ordinary hardware testing.
 
 Balanced recommended profile:
 

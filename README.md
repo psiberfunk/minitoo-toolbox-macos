@@ -28,7 +28,10 @@ The device's Bluetooth MAC address is **not** hardcoded — see "First-time setu
 The menu-bar app doesn't ship with any device's MAC address baked in. The first time it launches with no address cached yet, it opens a **"Set Up MiniToo"** window instead of starting the daemon:
 
 1. Power on the MiniToo and make sure it isn't currently connected to a phone/tablet (a Bluetooth Classic device generally only holds one active connection at a time).
-2. Click **Scan for Devices**. This runs a short (~8s) Bluetooth inquiry (via `blueutil`, already a dependency) plus a check of already-paired devices, and lists whatever it finds by name — entries that look like a Divoom device are sorted to the top, but everything nearby is shown in case the name doesn't match.
+2. Click **Scan for Devices**. This runs a short native Bluetooth inquiry and
+   separately lists saved pairing records. Nearby devices are labeled
+   **Nearby**; saved records are not evidence that a device is currently in
+   range. If Bluetooth is off, the app asks you to turn it on first.
 3. Click **Use This Device** next to the right entry. If the device isn't already paired, this triggers pairing; macOS may show its own native pairing prompt the first time.
 4. The address is cached (`UserDefaults`) and used for every future launch — you won't see this window again unless you use "Change Device…".
 
@@ -42,30 +45,43 @@ To change devices later, or to fix a wrong auto-detected address, open **Prefere
   tools/divoom-daemon B1:21:81:6F:4D:F0 1 40583
   ```
 
-If you don't know your device's MAC and don't want to use the in-app scan, `blueutil --inquiry` or `blueutil --paired` from a Terminal with Bluetooth permission will list it by name alongside its address.
+If you don't know your device's MAC and don't want to use the in-app scan,
+macOS Bluetooth Settings can display nearby and saved devices by name.
 
 ## Requirements
 
 - macOS
 - Xcode Command Line Tools / Swift compiler
-- Homebrew `blueutil` for audio-profile disconnect/reconnect convenience:
-
-```bash
-brew install blueutil
-```
 
 For development CLI use:
 
 - Python virtualenv with `Pillow`, `zstandard`, and `pyserial`
 - `ffmpeg` for GIF/video input
 
-The packaged app bundles the repo `.venv`, so normal app usage does not need the active shell Python environment.
+Release builds freeze the menu-bar app's Python helpers into native executables,
+so normal app usage does not need Python or a virtualenv installed. Local
+development builds fall back to the repo `.venv` when frozen helpers are not
+present.
+
+The app uses macOS's native IOBluetooth framework for scan, pairing, audio
+connection management, and RFCOMM. No Homebrew tools are required at runtime.
+Release builds also bundle an LGPL-only FFmpeg executable for video input.
 
 ## Build the macOS app
 
 ```bash
 tools/build-divoom-app.sh
 ```
+
+To build both Swift slices on a Mac with the matching SDK support:
+
+```bash
+DIVOOM_ARCHS="arm64 x86_64" tools/build-divoom-app.sh
+```
+
+The `personal` branch's GitHub Actions workflow builds the two slices on
+their native runners and publishes one universal ZIP to the rolling
+`personal-latest` prerelease.
 
 This builds:
 
@@ -82,9 +98,20 @@ open "/Applications/Divoom MiniToo.app"
 
 On launch, the app:
 
-1. Disconnects the Divoom macOS audio profile once using `blueutil`.
+1. Disconnects the Divoom macOS audio profile once using native IOBluetooth.
 2. Starts the Swift RFCOMM daemon.
 3. Keeps the daemon available from the menu bar.
+
+## Installing a release build
+
+Download and unzip `Divoom-MiniToo-macos-universal.zip`, then drag **Divoom
+MiniToo.app** into Applications. Releases are currently ad-hoc signed and not
+notarized. On the first launch, macOS may block it; Control-click the app,
+choose **Open**, then confirm **Open** in the dialog. Bluetooth permission is
+requested by macOS when needed.
+
+The accompanying FFmpeg source archive and [third-party notices](THIRD_PARTY_NOTICES.md)
+are included for the bundled video converter.
 
 Logs and generated packet artifacts are written under:
 
@@ -153,7 +180,6 @@ Useful actions:
 Start the daemon manually:
 
 ```bash
-blueutil --disconnect B1:21:81:B1:F0:84 || true
 tools/divoom-daemon B1:21:81:B1:F0:84 1 40583
 ```
 
@@ -288,13 +314,8 @@ omo-slim/                    Local test/media assets; not core project API
 
 ## Troubleshooting
 
-If daemon start fails with an RFCOMM error, disconnect the audio profile once:
-
-```bash
-blueutil --disconnect B1:21:81:B1:F0:84
-```
-
-Then restart the daemon or reopen the app.
+If daemon start fails with an RFCOMM error, use the app's **Disconnect Audio +
+Start Daemon** action, then restart the daemon.
 
 If a send reports `sent but final ACK not observed`, the device may still have updated successfully. This is usually an ACK-observation issue, not necessarily a failed transfer.
 
@@ -305,8 +326,6 @@ If video/GIF transfer is too slow, reduce frames before reducing pixels:
 ```
 
 Keep `--zstd-window-log 17` unless deliberately testing protocol behavior.
-
-If `blueutil` fails/aborts when run directly from an interactive Terminal, that's a TCC quirk tied to the calling process — it works fine invoked as a child of the signed `.app` (which is how the app itself uses it). Not a device problem.
 
 Hearing two Bluetooth connect chimes when the daemon starts is cosmetic: RFCOMM connects first, then macOS separately auto-restores the A2DP audio profile a couple seconds later. Not a bug.
 

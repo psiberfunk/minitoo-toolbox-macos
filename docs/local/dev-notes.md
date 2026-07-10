@@ -17,6 +17,41 @@ Not for upstream — personal working notes for developing this fork.
 - `tools/DivoomRFCOMM.swift` / `DivoomRFCOMMSend.swift` — standalone
   dev/debug scripts, not part of the shipped app.
 
+## Blueutil removal is feasible (researched 2026-07-10)
+
+`blueutil` is not the MiniToo transport. The shipped Swift daemon already
+uses the same macOS `IOBluetooth` framework directly to open RFCOMM channel
+1. Today, the menu-bar app shells out to `blueutil` for device inquiry,
+paired-device enumeration, pairing/name lookup, connection-state checks, and
+the disconnect/reconnect convenience actions.
+
+Review of blueutil's source established that it is an Objective-C CLI wrapper
+over `IOBluetooth`, not a privileged/Homebrew-only Bluetooth mechanism. Its
+source calls out private `IOBluetoothPreference*` functions only for global
+controller power/discoverability preferences; those are irrelevant here. The
+per-device operations we use are the framework-level device inquiry/pairing
+and connection APIs. In particular, its `--disconnect <MAC>` closes the
+device-level Classic connection; native Swift should be able to perform the
+same reset through the `IOBluetoothDevice` represented by that MAC before the
+daemon opens RFCOMM.
+
+This is a shippable-dependency cleanup candidate, not an assumption that the
+MiniToo behavior has already been verified: implement it behind the existing
+menu actions and hardware-test native disconnect → daemon RFCOMM-open before
+removing blueutil. The device-level disconnect necessarily drops macOS audio,
+which matches the present blueutil behavior and is the prerequisite observed
+for reliable RFCOMM ownership.
+
+### Migration status (2026-07-10)
+
+Implemented in `tools/DivoomBluetooth.swift`; app code no longer invokes the
+external CLI. Physical testing confirmed scan/pairing. The first implementation
+mistakenly treated saved pairing records as scan results and omitted a
+controller-power check; corrected code now labels nearby inquiry results and
+saved records separately. Do not mark the migration fully hardware-verified
+until nearby-unpaired discovery plus native disconnect → RFCOMM-open and audio
+reconnect have been observed.
+
 ## Decision: not rebasing on ztomer/divoom_lib
 Zero mentions of "MiniToo" in its ~70K lines; its similarly-named "Timoo"
 is a different, much lower-resolution product; its own white-noise routing

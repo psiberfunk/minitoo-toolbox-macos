@@ -292,8 +292,23 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func pythonExecutable() -> String {
-        let venvPy = repo.appendingPathComponent(".venv/bin/python").path
-        return FileManager.default.isExecutableFile(atPath: venvPy) ? venvPy : (executablePath("python3") ?? "/usr/bin/python3")
+        let localVenv = repo.appendingPathComponent(".venv/bin/python").path
+        if FileManager.default.isExecutableFile(atPath: localVenv) { return localVenv }
+        return executablePath("python3") ?? "/usr/bin/python3"
+    }
+
+    func runPythonTool(_ command: String, scriptName: String, arguments: [String]) -> (Int32, String) {
+        #if arch(arm64)
+        let architecture = "arm64"
+        #else
+        let architecture = "x86_64"
+        #endif
+        let frozen = toolRoot.appendingPathComponent(architecture).appendingPathComponent("divoom-helper").path
+        if FileManager.default.isExecutableFile(atPath: frozen) {
+            return run(frozen, [command] + arguments)
+        }
+        let script = toolRoot.appendingPathComponent(scriptName).path
+        return run(pythonExecutable(), [script] + arguments)
     }
 
     func executablePath(_ name: String) -> String? {
@@ -314,6 +329,10 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         p.currentDirectoryURL = repo
         var env = ProcessInfo.processInfo.environment
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        let bundledFFmpeg = toolRoot.appendingPathComponent("ffmpeg").path
+        if FileManager.default.isExecutableFile(atPath: bundledFFmpeg) {
+            env["DIVOOM_FFMPEG"] = bundledFFmpeg
+        }
         p.environment = env
         let pipe = Pipe()
         p.standardOutput = pipe
@@ -338,9 +357,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func isAudioConnected() -> Bool {
-        guard let blueutil = executablePath("blueutil") else { return false }
-        let (code, out) = run(blueutil, ["--is-connected", address], wait: true)
-        return code == 0 && out.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+        DivoomBluetooth.isConnected(address: address)
     }
 
     func setStatus(_ message: String) {
@@ -354,8 +371,8 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func startDaemon(disconnectFirst: Bool) {
         DispatchQueue.global(qos: .userInitiated).async {
-            if disconnectFirst, let blueutil = self.executablePath("blueutil") {
-                _ = self.run(blueutil, ["--disconnect", self.address])
+            if disconnectFirst {
+                _ = DivoomBluetooth.disconnect(address: self.address)
             }
             Thread.sleep(forTimeInterval: disconnectFirst ? 1.5 : 0.0)
             if self.isDaemonRunning() {
@@ -421,23 +438,15 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func disconnectAudioMenu() {
         DispatchQueue.global().async {
-            guard let blueutil = self.executablePath("blueutil") else {
-                self.setStatus("blueutil not found")
-                return
-            }
-            let (_, out) = self.run(blueutil, ["--disconnect", self.address])
-            self.setStatus(out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Audio disconnected" : out)
+            let result = DivoomBluetooth.disconnect(address: self.address)
+            self.setStatus(result == kIOReturnSuccess ? "Audio disconnected" : "Could not disconnect audio")
         }
     }
 
     @objc func reconnectAudioMenu() {
         DispatchQueue.global().async {
-            guard let blueutil = self.executablePath("blueutil") else {
-                self.setStatus("blueutil not found")
-                return
-            }
-            let (_, out) = self.run(blueutil, ["--connect", self.address])
-            self.setStatus(out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Audio reconnect requested" : out)
+            let result = DivoomBluetooth.connect(address: self.address)
+            self.setStatus(result == kIOReturnSuccess ? "Audio reconnect requested" : "Could not reconnect audio")
         }
     }
 
@@ -448,9 +457,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 completion?(false, "Daemon not running")
                 return
             }
-            let py = self.pythonExecutable()
-            let client = self.toolRoot.appendingPathComponent("divoom_clock.py").path
-            let (code, out) = self.run(py, [client, shortcut])
+            let (code, out) = self.runPythonTool("clock", scriptName: "divoom_clock.py", arguments: [shortcut])
             let detail = String(out.suffix(700))
             self.setStatus(code == 0 ? "Activated custom face \(shortcut)" : "Clock issue: \(detail)")
             completion?(code == 0, detail)

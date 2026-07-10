@@ -1,15 +1,16 @@
 import AppKit
 import SwiftUI
 import Foundation
+import IOBluetooth
 
 /// First-run (and "Change Device…") flow for discovering and caching the
 /// MiniToo's Bluetooth MAC address, replacing the old hardcoded constant.
-/// Uses `blueutil --paired`/`--inquiry` (already a dependency of this app)
-/// rather than adding a separate IOBluetooth device-inquiry bridge.
+/// Uses public IOBluetooth inquiry and pairing APIs; no external CLI is needed.
 struct DiscoveredDevice: Identifiable, Equatable {
     let address: String
     let name: String
     let paired: Bool
+    let nearby: Bool
     var id: String { address }
 
     var looksLikeDivoom: Bool {
@@ -28,34 +29,43 @@ final class DeviceScanModel: ObservableObject {
 
     func scan() {
         guard !isScanning else { return }
+        guard DivoomBluetooth.isPoweredOn() else {
+            results = []
+            scanStatus = "Bluetooth is off. Turn Bluetooth on in System Settings, then scan again."
+            return
+        }
         isScanning = true
+        results = []
         scanStatus = "Scanning for nearby Bluetooth devices (about 8 seconds)…"
-        DispatchQueue.global(qos: .userInitiated).async { [app] in
-            guard let blueutil = app.executablePath("blueutil") else {
-                DispatchQueue.main.async {
-                    self.isScanning = false
-                    self.scanStatus = "blueutil not found — install it with 'brew install blueutil'."
-                }
-                return
-            }
+        DispatchQueue.global(qos: .userInitiated).async {
             var found: [String: DiscoveredDevice] = [:]
-            // Already-paired devices show up instantly; inquiry (slower,
-            // ~8s) then adds anything nearby but not yet paired.
-            let (_, pairedOut) = app.run(blueutil, ["--paired", "--format", "json"], wait: true)
-            Self.merge(pairedOut, into: &found)
-            let (_, inquiryOut) = app.run(blueutil, ["--inquiry", "8", "--format", "json"], wait: true)
-            Self.merge(inquiryOut, into: &found)
+            // Keep the system pairing registry separate from actual nearby
+            // inquiry results; old pairing records are not evidence a device
+            // is currently visible over Bluetooth.
+            for device in DivoomBluetooth.pairedDevices() {
+                let address = Self.normalize(device.addressString)
+                guard !address.isEmpty else { continue }
+                found[address] = DiscoveredDevice(address: address, name: device.name ?? "Unknown device", paired: true, nearby: false)
+            }
+            for device in DivoomBluetooth.nearbyDevices(seconds: 8) {
+                let address = Self.normalize(device.addressString)
+                guard !address.isEmpty else { continue }
+                found[address] = DiscoveredDevice(address: address, name: device.name ?? "Unknown device", paired: device.isPaired(), nearby: true)
+            }
 
             let sorted = found.values.sorted { a, b in
                 if a.looksLikeDivoom != b.looksLikeDivoom { return a.looksLikeDivoom }
+                if a.nearby != b.nearby { return a.nearby }
                 return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
             }
             DispatchQueue.main.async {
                 self.results = sorted
                 self.isScanning = false
-                self.scanStatus = sorted.isEmpty
-                    ? "No devices found. Make sure the MiniToo is powered on and not already connected to another phone or tablet, then try again."
-                    : "Found \(sorted.count) device\(sorted.count == 1 ? "" : "s")."
+                let nearby = sorted.filter(\.nearby).count
+                let saved = sorted.count - nearby
+                self.scanStatus = nearby == 0
+                    ? "No nearby devices found. \(saved) saved pairing\(saved == 1 ? "" : "s") shown below; power on the MiniToo and make sure it is not connected to another phone or tablet, then scan again."
+                    : "Nearby scan finished: \(nearby) nearby device\(nearby == 1 ? "" : "s"), plus \(saved) saved pairing\(saved == 1 ? "" : "s")."
             }
         }
     }
@@ -71,7 +81,7 @@ final class DeviceScanModel: ObservableObject {
             // Prefer a paired=true record over an unpaired one for the same
             // address if both listings happened to return it.
             if let existing = found[address], existing.paired, !paired { continue }
-            found[address] = DiscoveredDevice(address: address, name: name, paired: paired)
+            found[address] = DiscoveredDevice(address: address, name: name, paired: paired, nearby: false)
         }
     }
 
@@ -121,23 +131,19 @@ final class DeviceSetupModel: ObservableObject {
     private func commit(address: String, name: String?, alreadyPaired: Bool) {
         isWorking = true
         statusText = alreadyPaired ? "Using already-paired device…" : "Pairing…"
-        DispatchQueue.global(qos: .userInitiated).async { [app] in
+        DispatchQueue.global(qos: .userInitiated).async {
             // Best-effort: already-paired devices no-op here; unpaired ones
             // either complete silently (SSP "just works") or surface
             // macOS's own native pairing prompt.
-            if !alreadyPaired, let blueutil = app.executablePath("blueutil") {
-                _ = app.run(blueutil, ["--pair", address], wait: true)
+            if !alreadyPaired {
+                _ = DivoomBluetooth.pair(address: address)
             }
             // Manual entry doesn't come with a name from the scan list —
             // look it up the same way the scan does rather than leaving it
             // blank.
             var resolvedName = name
-            if resolvedName == nil, let blueutil = app.executablePath("blueutil") {
-                let (_, infoOut) = app.run(blueutil, ["--info", address, "--format", "json"], wait: true)
-                if let data = infoOut.data(using: .utf8),
-                   let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    resolvedName = dict["name"] as? String
-                }
+            if resolvedName == nil {
+                resolvedName = DivoomBluetooth.device(address: address)?.name
             }
             DispatchQueue.main.async {
                 self.app.address = address
@@ -199,8 +205,12 @@ struct DeviceSetupView: View {
                                         .foregroundColor(.secondary)
                                 }
                                 Spacer()
-                                if device.paired {
-                                    Text("Paired")
+                                if device.nearby {
+                                    Text(device.paired ? "Nearby · Paired" : "Nearby")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                } else if device.paired {
+                                    Text("Saved pairing")
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
                                 }

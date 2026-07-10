@@ -8,29 +8,65 @@ APP="$BUILD/Divoom MiniToo.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
+# A space-separated list lets CI build one native slice per job, while a
+# developer can make a universal app locally with DIVOOM_ARCHS="arm64 x86_64".
+ARCHS="${DIVOOM_ARCHS:-$(uname -m)}"
+APP_VERSION="${DIVOOM_APP_VERSION:-0.1.0-alpha.1}"
+BUILD_VERSION="${DIVOOM_BUILD_VERSION:-1}"
 
 mkdir -p "$BUILD"
 
-echo "Building Swift daemon..."
-swiftc "$TOOLS/DivoomDaemon.swift" \
-  -framework Foundation \
-  -framework IOBluetooth \
-  -framework Network \
-  -o "$TOOLS/divoom-daemon"
+mkdir -p "$BUILD"
+for ARCH in $ARCHS; do
+  case "$ARCH" in
+    arm64|x86_64) ;;
+    *) echo "unsupported architecture: $ARCH" >&2; exit 2 ;;
+  esac
 
-echo "Building menu-bar app executable..."
-swiftc "$TOOLS/DivoomMenuBar.swift" "$TOOLS/DivoomControlCenter.swift" "$TOOLS/DivoomPreferences.swift" "$TOOLS/DivoomAtmosphereIcons.swift" "$TOOLS/DivoomDeviceSetup.swift" \
-  -framework AppKit \
-  -framework SwiftUI \
-  -framework Network \
-  -o "$TOOLS/divoom-menubar"
+  TARGET="$ARCH-apple-macos12.0"
+  echo "Building Swift daemon ($ARCH)..."
+  swiftc -target "$TARGET" "$TOOLS/DivoomDaemon.swift" \
+    -framework Foundation \
+    -framework IOBluetooth \
+    -framework Network \
+    -o "$BUILD/divoom-daemon-$ARCH"
+
+  echo "Building menu-bar app executable ($ARCH)..."
+  swiftc -target "$TARGET" "$TOOLS/DivoomMenuBar.swift" "$TOOLS/DivoomControlCenter.swift" "$TOOLS/DivoomPreferences.swift" "$TOOLS/DivoomAtmosphereIcons.swift" "$TOOLS/DivoomDeviceSetup.swift" "$TOOLS/DivoomBluetooth.swift" \
+    -framework AppKit \
+    -framework SwiftUI \
+    -framework Network \
+    -o "$BUILD/divoom-menubar-$ARCH"
+done
+
+build_universal_binary() {
+  local output="$1"
+  shift
+  if [[ "$#" -eq 1 ]]; then
+    cp "$1" "$output"
+  else
+    lipo -create "$@" -output "$output"
+  fi
+}
+
+daemon_slices=()
+menubar_slices=()
+for ARCH in $ARCHS; do
+  daemon_slices+=("$BUILD/divoom-daemon-$ARCH")
+  menubar_slices+=("$BUILD/divoom-menubar-$ARCH")
+done
+build_universal_binary "$BUILD/divoom-daemon" "${daemon_slices[@]}"
+build_universal_binary "$BUILD/divoom-menubar" "${menubar_slices[@]}"
+# Keep the documented developer CLI paths current as well as the app bundle.
+cp "$BUILD/divoom-daemon" "$TOOLS/divoom-daemon"
+cp "$BUILD/divoom-menubar" "$TOOLS/divoom-menubar"
 
 echo "Packaging $APP..."
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES/tools"
 
-cp "$TOOLS/divoom-menubar" "$MACOS/DivoomMiniToo"
-cp "$TOOLS/divoom-daemon" "$RESOURCES/tools/divoom-daemon"
+cp "$BUILD/divoom-menubar" "$MACOS/DivoomMiniToo"
+cp "$BUILD/divoom-daemon" "$RESOURCES/tools/divoom-daemon"
 cp "$TOOLS/divoom_send.py" "$RESOURCES/tools/divoom_send.py"
 cp "$TOOLS/divoom_clock.py" "$RESOURCES/tools/divoom_clock.py"
 cp "$TOOLS/divoom_display.py" "$RESOURCES/tools/divoom_display.py"
@@ -40,22 +76,39 @@ cp "$TOOLS/divoom_atmosphere.py" "$RESOURCES/tools/divoom_atmosphere.py"
 cp "$TOOLS/send_divoom_image.py" "$RESOURCES/tools/send_divoom_image.py"
 cp "$ROOT/PROTOCOL.md" "$RESOURCES/PROTOCOL.md"
 cp "$ROOT/assets/AppIcon.icns" "$RESOURCES/AppIcon.icns"
+if [[ -x "$BUILD/ffmpeg/ffmpeg" ]]; then
+  cp "$BUILD/ffmpeg/ffmpeg" "$RESOURCES/tools/ffmpeg"
+  chmod +x "$RESOURCES/tools/ffmpeg"
+fi
+for FROZEN_TOOL in divoom-helper; do
+  if [[ -x "$BUILD/frozen/$FROZEN_TOOL" ]]; then
+    # The menu app selects frozen helpers by host architecture. CI builds one
+    # native helper per job; local builds place the current host's helper here.
+    FROZEN_ARCH="${DIVOOM_FROZEN_ARCH:-$(uname -m)}"
+    mkdir -p "$RESOURCES/tools/$FROZEN_ARCH"
+    cp "$BUILD/frozen/$FROZEN_TOOL" "$RESOURCES/tools/$FROZEN_ARCH/$FROZEN_TOOL"
+    chmod +x "$RESOURCES/tools/$FROZEN_ARCH/$FROZEN_TOOL"
+  fi
+done
 chmod +x "$MACOS/DivoomMiniToo" "$RESOURCES/tools/divoom-daemon"
 
-if [[ -x "$ROOT/.venv/bin/python" ]]; then
+if [[ -x "$BUILD/frozen/divoom-helper" ]]; then
+  echo "Using frozen Python tools; no virtualenv is bundled."
+elif [[ -x "$ROOT/.venv/bin/python" ]]; then
   echo "Bundling Python venv..."
   ditto "$ROOT/.venv" "$RESOURCES/.venv"
-  if [[ -L "$RESOURCES/.venv/bin/python3.14" ]]; then
-    PY_TARGET="$(realpath "$ROOT/.venv/bin/python3.14")"
-    rm "$RESOURCES/.venv/bin/python3.14"
-    cp "$PY_TARGET" "$RESOURCES/.venv/bin/python3.14"
-    chmod +x "$RESOURCES/.venv/bin/python3.14"
-  fi
+  # Preserve the existing local-development behavior. Release builds use the
+  # frozen executables above instead of attempting to relocate a venv.
+  PY_TARGET="$(realpath "$ROOT/.venv/bin/python")"
+  PY_NAME="$(basename "$PY_TARGET")"
+  rm -f "$RESOURCES/.venv/bin/$PY_NAME"
+  cp "$PY_TARGET" "$RESOURCES/.venv/bin/$PY_NAME"
+  chmod +x "$RESOURCES/.venv/bin/$PY_NAME"
 else
   echo "warning: $ROOT/.venv/bin/python not found; packaged app will fall back to system python3" >&2
 fi
 
-cat > "$CONTENTS/Info.plist" <<'PLIST'
+cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -77,9 +130,9 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$BUILD_VERSION</string>
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
   <key>LSUIElement</key>

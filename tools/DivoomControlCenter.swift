@@ -68,11 +68,9 @@ final class ControlCenterModel: ObservableObject {
         let wantsFullScreen = fullScreen
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let py = self.app.pythonExecutable()
-            let script = self.app.toolRoot.appendingPathComponent("divoom_send.py").path
-            var args = [script, url.path, "--build-only", "--out-dir", self.app.capturesDir.path]
+            var args = [url.path, "--build-only", "--out-dir", self.app.capturesDir.path]
             if wantsFullScreen { args.append("--full-screen") }
-            let (code, out) = self.app.run(py, args)
+            let (code, out) = self.app.runPythonTool("send", scriptName: "divoom_send.py", arguments: args)
             DispatchQueue.main.async {
                 self.isBusy = false
                 guard code == 0 else {
@@ -108,29 +106,18 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func send() {
-        guard let mediaURL else { return }
+        guard let packetsPath else { return }
         guard app.isDaemonRunning() else {
             status = "Daemon not running — start it from the menu first."
             return
         }
         isBusy = true
         status = "Sending…"
-        let wantsFullScreen = fullScreen
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            // The preview build already ran once for display; re-running the
-            // full pipeline here (instead of resubmitting the earlier packets
-            // file) keeps this feature self-contained without depending on
-            // the daemon's native TCP-submit helper, at the cost of
-            // re-encoding — cheap relative to the multi-second BT transfer.
-            let py = self.app.pythonExecutable()
-            let script = self.app.toolRoot.appendingPathComponent("divoom_send.py").path
-            var args = [script, mediaURL.path, "--out-dir", self.app.capturesDir.path]
-            if wantsFullScreen { args.append("--full-screen") }
-            let (code, out) = self.app.run(py, args)
+        DivoomRawFrame.submit(packetsPath: packetsPath, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
             DispatchQueue.main.async {
+                guard let self else { return }
                 self.isBusy = false
-                self.status = code == 0 ? "Sent to device." : "Send issue: \(String(out.suffix(500)))"
+                self.status = result.contains("\"ok\":true") ? "Sent to device." : "Send issue: \(String(result.suffix(500)))"
             }
         }
     }
@@ -167,10 +154,10 @@ struct SendMediaView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                    Toggle("Full Screen (160×128)", isOn: $model.fullScreen)
-                        .toggleStyle(.checkbox)
-                        .disabled(model.isBusy)
-                        .help("Use the panel's full rectangular resolution instead of a square center-crop.")
+                    Text("Full Screen (160×128) is temporarily unavailable after an unacknowledged device crash. Sends use safe 128×128 mode.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
                     if !model.summary.isEmpty {
                         Text(model.summary).font(.caption).foregroundColor(.secondary)
                     }
@@ -664,9 +651,7 @@ final class PhotoAlbumModel: ObservableObject {
         summary = ""
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let py = self.app.pythonExecutable()
-            let script = self.app.toolRoot.appendingPathComponent("divoom_album.py").path
-            let (code, out) = self.app.run(py, [script, "--out-dir", self.app.capturesDir.path, "--build-only", "add-photo", url.path])
+            let (code, out) = self.app.runPythonTool("album", scriptName: "divoom_album.py", arguments: ["--out-dir", self.app.capturesDir.path, "--build-only", "add-photo", url.path])
             DispatchQueue.main.async {
                 self.isBusy = false
                 guard code == 0 else {
@@ -702,9 +687,7 @@ final class PhotoAlbumModel: ObservableObject {
         status = "Adding to photo album…"
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let py = self.app.pythonExecutable()
-            let script = self.app.toolRoot.appendingPathComponent("divoom_album.py").path
-            let (code, out) = self.app.run(py, [script, "--out-dir", self.app.capturesDir.path, "add-photo", mediaURL.path])
+            let (code, out) = self.app.runPythonTool("album", scriptName: "divoom_album.py", arguments: ["--out-dir", self.app.capturesDir.path, "add-photo", mediaURL.path])
             DispatchQueue.main.async {
                 self.isBusy = false
                 self.status = code == 0 ? "Added to photo album." : "Issue: \(String(out.suffix(500)))"

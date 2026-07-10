@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -154,7 +155,8 @@ def build_video_payload(
     if max_frames <= 0 or max_frames > 255:
         raise ValueError("max_frames must be in the range 1..255")
 
-    ffmpeg = shutil.which("ffmpeg")
+    bundled_ffmpeg = os.environ.get("DIVOOM_FFMPEG")
+    ffmpeg = bundled_ffmpeg if bundled_ffmpeg and Path(bundled_ffmpeg).is_file() else shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("ffmpeg is required for video input; install it or send a still image")
 
