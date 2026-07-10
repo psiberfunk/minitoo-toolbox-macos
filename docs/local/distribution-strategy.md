@@ -4,6 +4,16 @@
 
 Publish a self-contained universal macOS app from every push to `personal`.
 
+## Future product identity (deferred)
+
+Before broad distribution, evaluate whether this fork should receive a new app
+name and promote its active `personal` line to the fork's `main` branch. That
+is a governance/identity transition, not a build-system rename: it requires
+legal distribution-rights review, upstream attribution, a bundle-ID and
+UserDefaults migration plan, release/workflow retargeting, and an explicit
+decision not to imply upstream endorsement or takeover. The detailed checklist
+lives in `docs/local/branch-workflow.md`.
+
 ## Stepwise rollout
 
 1. Build arm64 and x86_64 Swift slices, freeze the Python-backed media helper
@@ -32,6 +42,12 @@ NASM, which the hosted runner lacks. The signing lookup now permits the
 existing ad-hoc fallback; Intel CI installs NASM before building FFmpeg, which
 retains its normal optimized x86 path. Native app build logs are retained for
 seven days on future failed runs.
+
+The corrected second run (`29112757315`) successfully built both architecture
+slices, including Intel FFmpeg with NASM. It then failed only in universal
+assembly because the workflow attempted to rename the extracted Intel app to
+the exact same path. That no-op is removed; the next push validates assembly,
+ad-hoc signing, artifact upload, and release publication.
 
 ## Required physical checklist
 

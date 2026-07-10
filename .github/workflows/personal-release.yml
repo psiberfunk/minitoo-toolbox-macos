@@ -97,7 +97,6 @@ jobs:
           ditto -x -k arm64/Divoom-MiniToo-arm64.zip .
           mv "Divoom MiniToo.app" arm64.app
           ditto -x -k x86_64/Divoom-MiniToo-x86_64.zip .
-          mv "Divoom MiniToo.app" "Divoom MiniToo.app"
           # Each build already places its helper in its architecture directory.
           # Start from the Intel app and copy the Apple Silicon helper beside it.
           ditto "arm64.app/Contents/Resources/tools/arm64" "Divoom MiniToo.app/Contents/Resources/tools/arm64"

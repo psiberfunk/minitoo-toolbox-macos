@@ -45,6 +45,14 @@ recovery path.
 
 ## Long-term release hardening
 
+- **Deferred independent-fork identity transition.** Before broader public
+  distribution, decide whether to rename the app/project and make the active
+  integrated branch this fork's `main` (replacing `personal`). This requires
+  legal distribution-rights review, preserved upstream attribution, a
+  bundle-ID/UserDefaults migration, workflow retargeting, and no claim of
+  upstream takeover. See `docs/local/branch-workflow.md`; no rename or branch
+  promotion is approved yet.
+
 - **Remove the Python runtime dependency from the shipped app.** Migrate the
   remaining media/custom-face/photo-album pipeline to native Swift/macOS APIs
   (including image/GIF/video decoding, resizing, JPEG output, zstd payload
@@ -113,3 +121,7 @@ upstreamed).
   discovery pass; the White Noise display-mode behavior is accepted for the
   alpha. The next gate is the first GitHub Actions build and its generated
   universal artifact; no commit/push had occurred at the time of this note.
+- Second GitHub Actions run (`29112757315`) built both Apple Silicon and Intel
+  slices successfully; it failed only during universal assembly on an invalid
+  same-path `mv` after Intel extraction. The no-op is removed; next run tests
+  the remaining assembly/sign/release stages.
