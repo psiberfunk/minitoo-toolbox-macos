@@ -90,6 +90,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-release.txt
+      - name: Install DMG layout builder
+        run: python -m pip install -r requirements-release.txt
       - uses: actions/download-artifact@v5
         with:
           name: Divoom-MiniToo-arm64
@@ -123,12 +130,7 @@ jobs:
             "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg" \
             -output "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg"
           codesign --force --deep --sign - "Divoom MiniToo.app"
-          rm -rf "Divoom MiniToo Release"
-          mkdir "Divoom MiniToo Release"
-          ditto "Divoom MiniToo.app" "Divoom MiniToo Release/Divoom MiniToo.app"
-          cp INSTALLING.md "Divoom MiniToo Release/INSTALLING.md"
-          hdiutil create -volname "Divoom MiniToo" -srcfolder "Divoom MiniToo Release" \
-            -ov -format UDZO Divoom-MiniToo-macos-universal.dmg
+          dmgbuild -s tools/dmgbuild-settings.py "Divoom MiniToo" Divoom-MiniToo-macos-universal.dmg
           shasum -a 256 Divoom-MiniToo-macos-universal.dmg > Divoom-MiniToo-macos-universal.dmg.sha256
       - uses: actions/upload-artifact@v4
         with:

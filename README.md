@@ -113,6 +113,9 @@ then use **System Settings → Privacy & Security → Open Anyway** (the button
 appears for about an hour) and confirm **Open**. Bluetooth permission is
 requested by macOS when needed.
 
+The DMG opens in an icon view with the app and installation guide centered in
+the two reserved panels of its pixel-art background.
+
 The accompanying FFmpeg source archive and [third-party notices](THIRD_PARTY_NOTICES.md)
 are included for the bundled video converter.
 

@@ -137,3 +137,8 @@ upstreamed).
   plus the pip download cache. Do not cache `.venv`, FFmpeg intermediates,
   Homebrew, or release artifacts. `ffmpeg-cache-v1` is the deliberate
   invalidation switch.
+- **DMG presentation:** the release DMG uses a Finder background with two
+  reserved panels and deterministic icon positions for `Divoom MiniToo.app` and
+  `INSTALLING.md`. The selected background is a lightly colorized pixel-art
+  night scene; it is a presentation asset only and does not include FFmpeg
+  source (which remains a separate release attachment).
