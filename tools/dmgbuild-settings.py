@@ -31,4 +31,12 @@ text_size = 13
 icon_locations = {
     "Divoom MiniToo.app": (195, 258),
     "INSTALLING.md": (597, 258),
+    # dmgbuild names the compiled HiDPI background ".background.tiff" and
+    # relies solely on the leading dot to hide it — that fails for any user
+    # with Finder's "show hidden files" on (a common developer setting),
+    # and it has no icon_locations entry so Finder auto-places it at the
+    # default top-left grid slot when it is visible. Pin it off-canvas as a
+    # defense-in-depth fallback on top of the explicit `hide` entry below.
+    ".background.tiff": (396, 1200),
 }
+hide = [".background.tiff"]

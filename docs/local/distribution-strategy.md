@@ -53,6 +53,14 @@ ad-hoc signing, artifact upload, and release publication. The third run
 universal release, SHA-256 file, and matching FFmpeg source archive to the rolling
 `personal-latest` prerelease.
 
+Subsequent successful runs changed the user-facing artifact from ZIP to a
+universal DMG and removed stale ZIP assets. The DMG contains only the app,
+`INSTALLING.md`, and Finder presentation metadata; the LGPL FFmpeg source
+archive remains a separate release attachment. Run `29118886535` published the
+selected pixel-art background and deterministic app/guide icon positions. The
+published DMG metadata was checked directly; a fresh Finder visual check by a
+user remains the final presentation confirmation.
+
 ### Later CI optimization: deterministic dependency caches
 
 The hosted workflow now caches the per-architecture compiled FFmpeg binary and
@@ -65,6 +73,10 @@ app/release artifacts: those are runner/path-sensitive, too large for the
 value, or are already handled as artifacts. Increment `ffmpeg-cache-v1` in
 the workflow to deliberately invalidate all FFmpeg caches. Caching is an
 optional speed-up, never a dependency for a reproducible build.
+
+The cache was warmed by `29115469899` and then verified by `29116481715` and
+later runs, which restored the two FFmpeg binaries rather than recompiling
+them.
 
 ### CI monitoring rule
 

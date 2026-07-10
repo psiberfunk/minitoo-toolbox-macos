@@ -121,24 +121,38 @@ upstreamed).
   discovery pass; the White Noise display-mode behavior is accepted for the
   alpha. The next gate is the first GitHub Actions build and its generated
   universal artifact; no commit/push had occurred at the time of this note.
-- Second GitHub Actions run (`29112757315`) built both Apple Silicon and Intel
-  slices successfully; it failed only during universal assembly on an invalid
-  same-path `mv` after Intel extraction. The no-op is removed; next run tests
-  the remaining assembly/sign/release stages.
-- Third GitHub Actions run (`29113738061`) **succeeded** on 2026-07-10. It
-  published the ad-hoc-signed universal release, SHA-256 checksum, and matching
-  FFmpeg 8.1.2 source archive to the rolling `personal-latest` prerelease.
-  Technical CI assembly/publication is now complete; an independent real-Mac
-  install/launch/scan/send test and the separate upstream distribution-rights
-  decision remain before broad public distribution.
-- **CI cache optimization (implemented; first cache-warming run pending):**
-  cache the validated FFmpeg binary/source archive separately for each
-  architecture, keyed by source version and build-script/configuration hash,
-  plus the pip download cache. Do not cache `.venv`, FFmpeg intermediates,
-  Homebrew, or release artifacts. `ffmpeg-cache-v1` is the deliberate
-  invalidation switch.
+- Hosted release pipeline is now proven end-to-end. The initial two failures
+  (`29100401008`, signing/NASM; `29112757315`, same-path `mv`) are corrected;
+  `29113738061` first assembled/published successfully. The current styled-DMG
+  run (`29118886535`) also succeeded. The rolling `personal-latest` prerelease
+  publishes a universal DMG, its SHA-256 checksum, and the separate matching
+  FFmpeg 8.1.2 source archive—never the source archive inside the DMG.
+- **CI cache optimization is verified:** `29115469899` warmed the per-arch
+  FFmpeg and pip caches; `29116481715` and later runs restored FFmpeg instead
+  of recompiling it. The cache key includes architecture, source version and
+  build-script/configuration hash; `ffmpeg-cache-v1` is the deliberate
+  invalidation switch. Do not cache `.venv`, FFmpeg intermediates, Homebrew,
+  or release artifacts.
 - **DMG presentation:** the release DMG uses a Finder background with two
   reserved panels and deterministic icon positions for `Divoom MiniToo.app` and
   `INSTALLING.md`. The selected background is a lightly colorized pixel-art
   night scene; it is a presentation asset only and does not include FFmpeg
-  source (which remains a separate release attachment).
+  source (which remains a separate release attachment). The published DMG's
+  Finder metadata was inspected: it assigns the background and places the app
+  at `(195,258)` and guide at `(597,258)` inside the matching panels. A fresh
+  human Finder visual check remains requested.
+- This session made no Bluetooth/device changes or tests. Existing device
+  connection state was not touched; an independent real-Mac install/launch,
+  scan/pair, and basic-send confirmation remains required before broad public
+  distribution, along with the separate upstream distribution-rights decision.
+- **DMG background-visibility bug found and fixed:** the requested Finder
+  visual check surfaced a real defect — `dmgbuild` names the compiled HiDPI
+  background `.background.tiff` and relied only on the leading dot to hide
+  it, which fails for any user with Finder's "show hidden files" on. It
+  showed up as a stray "TIFF" icon auto-placed at the window's top-left
+  (no assigned position), disconnected from the artwork. Fixed in
+  `tools/dmgbuild-settings.py` by adding it to the `hide` setting (forces
+  the actual Finder-invisible attribute via `SetFile -a V`, confirmed
+  locally with `GetFileInfo`/`ls -lO` showing the flag set) plus an
+  off-canvas `icon_locations` fallback. A fresh human Finder visual check
+  of the next published DMG remains the final confirmation.
