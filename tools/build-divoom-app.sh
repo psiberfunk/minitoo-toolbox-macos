@@ -37,7 +37,7 @@ for ARCH in $ARCHS; do
   ZSTD_OBJS=("$BUILD/zstd/$ARCH"/*.o)
 
   echo "Building menu-bar app executable ($ARCH)..."
-  swiftc -target "$TARGET" "$TOOLS/DivoomMenuBar.swift" "$TOOLS/DivoomControlCenter.swift" "$TOOLS/DivoomPreferences.swift" "$TOOLS/DivoomAtmosphereIcons.swift" "$TOOLS/DivoomDeviceSetup.swift" "$TOOLS/DivoomBluetooth.swift" "$TOOLS/DivoomZstd.swift" "$TOOLS/DivoomClockFrame.swift" "$TOOLS/DivoomChunkedUpload.swift" "$TOOLS/DivoomImageResize.swift" "$TOOLS/DivoomAlbumEncode.swift" \
+  swiftc -target "$TARGET" "$TOOLS/DivoomMenuBar.swift" "$TOOLS/DivoomControlCenter.swift" "$TOOLS/DivoomPreferences.swift" "$TOOLS/DivoomAtmosphereIcons.swift" "$TOOLS/DivoomDeviceSetup.swift" "$TOOLS/DivoomBluetooth.swift" "$TOOLS/DivoomZstd.swift" "$TOOLS/DivoomClockFrame.swift" "$TOOLS/DivoomChunkedUpload.swift" "$TOOLS/DivoomImageResize.swift" "$TOOLS/DivoomAlbumEncode.swift" "$TOOLS/DivoomMediaEncode.swift" \
     "${ZSTD_OBJS[@]}" \
     -import-objc-header "$TOOLS/vendor/zstd-1.5.7/DivoomZstdBridge.h" \
     -Xcc -I"$ZSTD_LIB" \
