@@ -7,6 +7,10 @@ import Foundation
 /// byte-for-byte the same scheme in both.
 enum DivoomChunkedUpload {
     static func packets(cmd: UInt8, payload: Data, chunkSize: Int = 256) -> [Data] {
+        // Guards against a chunkSize <= 0 hanging forever below (offset would
+        // never advance) -- no call site passes anything but the default
+        // today, but nothing stops a future one from doing so by mistake.
+        let chunkSize = max(chunkSize, 1)
         var packets: [Data] = []
         var announceBody = Data([0x00])
         announceBody.append(u32le(payload.count))

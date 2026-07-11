@@ -48,4 +48,32 @@ struct DivoomChunkedUploadTests {
         let packets = DivoomChunkedUpload.packets(cmd: 0x8B, payload: payload)
         #expect(packets.count == 3) // announce + 256-byte chunk + 44-byte chunk
     }
+
+    /// Property check across many payload sizes (not just the hand-picked
+    /// boundary cases above): concatenating every chunk's payload bytes back
+    /// together, in order, must exactly reconstruct the original payload --
+    /// no dropped bytes, no duplicated bytes, no reordering, regardless of
+    /// how the size happens to divide against chunkSize.
+    @Test func reconstructsOriginalPayloadAcrossManySizes() {
+        for size in stride(from: 0, through: 600, by: 37) {
+            let payload = Data((0..<size).map { UInt8($0 % 256) })
+            let packets = DivoomChunkedUpload.packets(cmd: 0x77, payload: payload, chunkSize: 64)
+
+            var reconstructed = Data()
+            for packet in packets.dropFirst() { // skip the announce packet
+                let bodyLen = packet.count - 7
+                let body = packet.dropFirst(4).prefix(bodyLen)
+                reconstructed.append(body.dropFirst(7)) // drop [0x01] + total_len_le32 + seq_le16
+            }
+            #expect(reconstructed == payload, "size \(size) failed to round-trip")
+        }
+    }
+
+    /// chunkSize <= 0 used to hang forever (offset never advances past the
+    /// clamp added to DivoomChunkedUpload.packets). Not reachable from any
+    /// real call site today, but worth locking in now that it's guarded.
+    @Test func degenerateChunkSizeDoesNotHang() {
+        let packets = DivoomChunkedUpload.packets(cmd: 0x77, payload: Data([1, 2, 3]), chunkSize: 0)
+        #expect(packets.count == 4) // announce + 3 chunks, clamped to chunkSize 1
+    }
 }
