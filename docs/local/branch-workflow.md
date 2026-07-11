@@ -13,6 +13,16 @@ statement of upstream project policy.
 If a new branch depends on something only merged into `personal`, cut it
 from `personal`'s tip instead of clean `main`, and say so in the PR body.
 
+## PRs to upstream are opt-in, not a default sync step
+
+As of 2026-07-10, opening or updating a PR against
+`alvinunreal/divoom-minitoo-osx` is never done automatically as part of
+routine sync/compact-prep work — only when the user explicitly asks for it
+in that session. Previously, compact-prep would proactively cherry-pick and
+push new commits onto an already-open PR branch by default; that is no
+longer standing behavior. Commit and push to `personal`/`fork/personal` as
+normal; leave existing PR branches alone unless asked.
+
 ## Before opening a PR
 - One logical feature per branch/PR.
 - Disclose AI-assisted development + human hardware testing in the body.

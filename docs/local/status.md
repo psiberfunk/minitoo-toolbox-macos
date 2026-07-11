@@ -203,7 +203,10 @@ upstreamed).
   `show_status_bar`/`show_pathbar` settings have no effect on this macOS
   version (confirmed via an A/B test: forcing both `True` rendered
   identically to `False`), and there is no way to override the user's
-  own global Finder preference from inside a shipped DMG. Users who keep
-  those bars on will see the bottom of the artwork cropped by whatever
-  the bars' combined height is; this is a known, accepted limitation,
-  not yet fixed with extra padding for that case.
+  own global Finder preference from inside a shipped DMG. **Refined by
+  the user's own direct testing: only Path Bar causes the crop — Status
+  Bar alone does not.** Both are off by default on a fresh macOS account
+  (confirmed via web search, not assumed), so decided against padding
+  for the on-case: most users won't hit it, and the fix would cost
+  everyone else a visible empty margin below the artwork. Known,
+  accepted limitation for users who've explicitly turned Path Bar on.
