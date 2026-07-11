@@ -53,13 +53,26 @@ recovery path.
   upstream takeover. See `docs/local/branch-workflow.md`; no rename or branch
   promotion is approved yet.
 
-- **Remove the Python runtime dependency from the shipped app.** Migrate the
-  remaining media/custom-face/photo-album pipeline to native Swift/macOS APIs
-  (including image/GIF/video decoding, resizing, JPEG output, zstd payload
-  compression, packet construction, and daemon submission). Current releases
-  freeze a Python helper and bundle FFmpeg, so users do not install either;
-  removing those internal runtimes remains post-release hardening, not a
-  prerequisite for this distribution batch.
+- **Remove the Python runtime dependency from the shipped app — done
+  2026-07-11.** Migrated the media/custom-face/photo-album pipeline to
+  native Swift/macOS APIs: image resize/crop via CoreGraphics
+  (`DivoomImageResize.swift`), JPEG encode via ImageIO
+  (`DivoomAlbumEncode.swift`), zstd compression via a vendored zstd 1.5.7
+  compiled directly into the app (`DivoomZstd.swift`,
+  `tools/vendor/zstd-1.5.7/`), and packet construction/chunking
+  (`DivoomMediaEncode.swift`, `DivoomChunkedUpload.swift`,
+  `DivoomClockFrame.swift`). FFmpeg is still bundled and still does all
+  video/GIF scale/crop/fps/eq decoding exactly as before — only the
+  process invoking it changed, from Python's `subprocess.run` to Swift's
+  `Process` (`DivoomProcess.swift`). PyInstaller/`.venv` freezing and
+  bundling is entirely removed from `build-divoom-app.sh` and the release
+  workflow. Hardware-confirmed working (custom face, Photo Album, Send
+  Media stills and video/GIF, both full-screen and default) before this
+  deletion landed. The original `tools/divoom_*.py` scripts and
+  `requirements-app.txt`/`.venv` remain in the repo as standalone
+  dev-CLI/protocol-debugging tools, per an explicit decision — they're
+  no longer referenced by the app build at all. Full story, including the
+  zstd C-interop mechanics proof, in `dev-notes.md`.
 - **Native Bluetooth migration.** `blueutil` has been removed from app setup
   and connection management in favor of public `IOBluetooth`. Scan/pairing
   were physically confirmed; nearby-unpaired discovery and native

@@ -53,19 +53,22 @@ macOS Bluetooth Settings can display nearby and saved devices by name.
 - macOS
 - Xcode Command Line Tools / Swift compiler
 
-For development CLI use:
+For the standalone dev-CLI tools only (`tools/divoom_send.py` and friends —
+not needed to build or run the app itself):
 
-- Python virtualenv with `Pillow`, `zstandard`, and `pyserial`
+- Python virtualenv with `Pillow`, `zstandard`, and `pyserial` (`pip install -r requirements-app.txt`)
 - `ffmpeg` for GIF/video input
 
-Release builds freeze the menu-bar app's Python helpers into native executables,
-so normal app usage does not need Python or a virtualenv installed. Local
-development builds fall back to the repo `.venv` when frozen helpers are not
-present.
+The menu-bar app itself is fully native Swift: image/GIF/video encoding,
+zstd compression, and packet construction all run in-process (no Python,
+no PyInstaller, no bundled virtualenv). The app still bundles an LGPL-only
+FFmpeg executable, invoked directly for video/GIF frame decoding. Release
+builds no longer freeze or bundle any Python helper — the `tools/divoom_*.py`
+scripts remain in the repo purely as standalone dev-CLI/protocol-debugging
+tools, not as part of the shipped app.
 
 The app uses macOS's native IOBluetooth framework for scan, pairing, audio
 connection management, and RFCOMM. No Homebrew tools are required at runtime.
-Release builds also bundle an LGPL-only FFmpeg executable for video input.
 
 ## Build the macOS app
 
@@ -222,17 +225,20 @@ Ask the daemon to parse but not send:
 
 ## Integration API
 
-For most integrations, call `divoom_send.py` as a subprocess. It is the media-level API:
+The shipped app no longer bundles Python — its own media pipeline is native
+Swift (see `tools/DivoomMediaEncode.swift`, `tools/DivoomAlbumEncode.swift`).
+For scripting/integration from outside the app, use the repo's standalone
+`divoom_send.py` as a subprocess instead. It is the media-level API:
 
 ```text
 image/GIF/video -> Divoom packets -> daemon -> Bluetooth
 ```
 
-Example:
+Example (from a checkout of this repo, with the dev virtualenv set up per
+"Requirements" above):
 
 ```bash
-"/Applications/Divoom MiniToo.app/Contents/Resources/.venv/bin/python" \
-  "/Applications/Divoom MiniToo.app/Contents/Resources/tools/divoom_send.py" \
+.venv/bin/python tools/divoom_send.py \
   "/absolute/path/to/file.gif" \
   --size 128 --fps 8 --speed 125 --max-frames 24 --posterize-bits 4
 ```

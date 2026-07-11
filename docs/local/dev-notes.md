@@ -582,3 +582,56 @@ file gets built* changed, not how it gets sent — the built payload was
 independently verified correct via round-trip decompression for this
 exact case). Noting for the record only; revisit if it recurs with an
 actual reproducible pattern.
+
+## Phase 5: removing the Python/PyInstaller bundling infrastructure (2026-07-11)
+
+Once all four native ports above were hardware-confirmed, deleted the
+now-unused packaging around them:
+
+- `tools/build-divoom-app.sh`: removed the `for FROZEN_TOOL in
+  divoom-helper` copy block and the `.venv`-bundling fallback
+  (`ditto "$ROOT/.venv" "$RESOURCES/.venv"` etc.), and the `cp
+  "$TOOLS/divoom_*.py"` lines that copied Python scripts into
+  `Resources/tools`. FFmpeg bundling is untouched (`build/ffmpeg/ffmpeg`
+  still gets copied in) since it's still directly invoked by
+  `DivoomProcess.swift`.
+- Deleted `tools/freeze-python-tools.sh` and `tools/divoom_helper.py`
+  outright (the PyInstaller onefile entry point and its build script) --
+  nothing references them anymore.
+- Deleted `requirements-build.txt` entirely (not just the `PyInstaller`
+  line) -- once the CI workflow's venv-creation/freeze steps were removed,
+  nothing referenced this file at all.
+- `.github/workflows/personal-release.yml`: removed the `build` job's
+  `setup-python`/`.venv` creation/`requirements-build.txt` install/
+  `freeze-python-tools.sh` steps. The separate `release` job's own
+  `setup-python` + `requirements-release.txt` (for `dmgbuild`, a CI-only
+  DMG-packaging tool never bundled into the app) is untouched.
+- Removed the now-dead `pythonExecutable()`/`runPythonTool()` functions
+  from `DivoomMenuBar.swift` (confirmed via grep: zero remaining call
+  sites after all four ports), and the `DIVOOM_FFMPEG` env-var injection
+  in `run()` (also dead -- nothing reads that env var anymore now that
+  Swift invokes ffmpeg directly via its own resolved path instead of
+  handing it to a Python subprocess through the environment).
+- Added a zstd entry to `THIRD_PARTY_NOTICES.md` (BSD-2-Clause,
+  compression-only subset) alongside the existing FFmpeg entry.
+- Updated `README.md`'s Requirements/Integration API sections: Python is
+  now scoped explicitly to the kept standalone dev-CLI tools, not the
+  shipped app; the old Integration API example (`.venv/bin/python` +
+  `divoom_send.py` from inside the installed `.app`'s `Resources` folder)
+  no longer works since the bundle contains no Python at all, so it now
+  points at running the dev-CLI copy from a checkout of this repo instead.
+- **Kept, per an explicit user decision (not the default assumption):**
+  `tools/divoom_send.py`, `tools/divoom_clock.py`, `tools/divoom_album.py`,
+  `tools/send_divoom_image.py`, `requirements-app.txt`, and `.venv` all
+  remain in the repo as standalone dev-CLI/protocol-debugging tools --
+  this project's own reverse-engineering methodology leans on scripts
+  exactly like these. They are simply no longer referenced by
+  `build-divoom-app.sh` or bundled into the `.app`.
+
+Verified: a full clean local universal build (arm64+x86_64) after all
+deletions produces an app bundle containing no `.py` files, no `.venv`,
+and no `divoom-helper` anywhere (checked directly with `find`) -- only
+`AppIcon.icns`, `PROTOCOL.md`, the bundled `ffmpeg` binary, and
+`divoom-daemon`. Bundle size dropped to ~28MB (previously inflated by a
+PyInstaller onefile blob plus a full `.venv` site-packages tree). App
+launches and daemon starts cleanly post-deletion.

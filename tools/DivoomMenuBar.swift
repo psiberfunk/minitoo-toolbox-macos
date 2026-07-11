@@ -291,26 +291,6 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return String(singleLine.prefix(limit - 1)) + "…"
     }
 
-    func pythonExecutable() -> String {
-        let localVenv = repo.appendingPathComponent(".venv/bin/python").path
-        if FileManager.default.isExecutableFile(atPath: localVenv) { return localVenv }
-        return executablePath("python3") ?? "/usr/bin/python3"
-    }
-
-    func runPythonTool(_ command: String, scriptName: String, arguments: [String]) -> (Int32, String) {
-        #if arch(arm64)
-        let architecture = "arm64"
-        #else
-        let architecture = "x86_64"
-        #endif
-        let frozen = toolRoot.appendingPathComponent(architecture).appendingPathComponent("divoom-helper").path
-        if FileManager.default.isExecutableFile(atPath: frozen) {
-            return run(frozen, [command] + arguments)
-        }
-        let script = toolRoot.appendingPathComponent(scriptName).path
-        return run(pythonExecutable(), [script] + arguments)
-    }
-
     func executablePath(_ name: String) -> String? {
         let candidates = [
             "/opt/homebrew/bin/\(name)",
@@ -327,13 +307,6 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         p.executableURL = URL(fileURLWithPath: executable)
         p.arguments = args
         p.currentDirectoryURL = repo
-        var env = ProcessInfo.processInfo.environment
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        let bundledFFmpeg = toolRoot.appendingPathComponent("ffmpeg").path
-        if FileManager.default.isExecutableFile(atPath: bundledFFmpeg) {
-            env["DIVOOM_FFMPEG"] = bundledFFmpeg
-        }
-        p.environment = env
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe

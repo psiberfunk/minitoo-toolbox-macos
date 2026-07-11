@@ -79,46 +79,13 @@ mkdir -p "$MACOS" "$RESOURCES/tools"
 
 cp "$BUILD/divoom-menubar" "$MACOS/DivoomMiniToo"
 cp "$BUILD/divoom-daemon" "$RESOURCES/tools/divoom-daemon"
-cp "$TOOLS/divoom_send.py" "$RESOURCES/tools/divoom_send.py"
-cp "$TOOLS/divoom_clock.py" "$RESOURCES/tools/divoom_clock.py"
-cp "$TOOLS/divoom_display.py" "$RESOURCES/tools/divoom_display.py"
-cp "$TOOLS/divoom_whitenoise.py" "$RESOURCES/tools/divoom_whitenoise.py"
-cp "$TOOLS/divoom_album.py" "$RESOURCES/tools/divoom_album.py"
-cp "$TOOLS/divoom_atmosphere.py" "$RESOURCES/tools/divoom_atmosphere.py"
-cp "$TOOLS/send_divoom_image.py" "$RESOURCES/tools/send_divoom_image.py"
 cp "$ROOT/PROTOCOL.md" "$RESOURCES/PROTOCOL.md"
 cp "$ROOT/assets/AppIcon.icns" "$RESOURCES/AppIcon.icns"
 if [[ -x "$BUILD/ffmpeg/ffmpeg" ]]; then
   cp "$BUILD/ffmpeg/ffmpeg" "$RESOURCES/tools/ffmpeg"
   chmod +x "$RESOURCES/tools/ffmpeg"
 fi
-for FROZEN_TOOL in divoom-helper; do
-  if [[ -x "$BUILD/frozen/$FROZEN_TOOL" ]]; then
-    # The menu app selects frozen helpers by host architecture. CI builds one
-    # native helper per job; local builds place the current host's helper here.
-    FROZEN_ARCH="${DIVOOM_FROZEN_ARCH:-$(uname -m)}"
-    mkdir -p "$RESOURCES/tools/$FROZEN_ARCH"
-    cp "$BUILD/frozen/$FROZEN_TOOL" "$RESOURCES/tools/$FROZEN_ARCH/$FROZEN_TOOL"
-    chmod +x "$RESOURCES/tools/$FROZEN_ARCH/$FROZEN_TOOL"
-  fi
-done
 chmod +x "$MACOS/DivoomMiniToo" "$RESOURCES/tools/divoom-daemon"
-
-if [[ -x "$BUILD/frozen/divoom-helper" ]]; then
-  echo "Using frozen Python tools; no virtualenv is bundled."
-elif [[ -x "$ROOT/.venv/bin/python" ]]; then
-  echo "Bundling Python venv..."
-  ditto "$ROOT/.venv" "$RESOURCES/.venv"
-  # Preserve the existing local-development behavior. Release builds use the
-  # frozen executables above instead of attempting to relocate a venv.
-  PY_TARGET="$(realpath "$ROOT/.venv/bin/python")"
-  PY_NAME="$(basename "$PY_TARGET")"
-  rm -f "$RESOURCES/.venv/bin/$PY_NAME"
-  cp "$PY_TARGET" "$RESOURCES/.venv/bin/$PY_NAME"
-  chmod +x "$RESOURCES/.venv/bin/$PY_NAME"
-else
-  echo "warning: $ROOT/.venv/bin/python not found; packaged app will fall back to system python3" >&2
-fi
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
