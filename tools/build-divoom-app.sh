@@ -31,8 +31,16 @@ for ARCH in $ARCHS; do
     -framework Network \
     -o "$BUILD/divoom-daemon-$ARCH"
 
+  echo "Building vendored zstd ($ARCH)..."
+  bash "$TOOLS/build-zstd.sh" "$ARCH"
+  ZSTD_LIB="$TOOLS/vendor/zstd-1.5.7/lib"
+  ZSTD_OBJS=("$BUILD/zstd/$ARCH"/*.o)
+
   echo "Building menu-bar app executable ($ARCH)..."
-  swiftc -target "$TARGET" "$TOOLS/DivoomMenuBar.swift" "$TOOLS/DivoomControlCenter.swift" "$TOOLS/DivoomPreferences.swift" "$TOOLS/DivoomAtmosphereIcons.swift" "$TOOLS/DivoomDeviceSetup.swift" "$TOOLS/DivoomBluetooth.swift" \
+  swiftc -target "$TARGET" "$TOOLS/DivoomMenuBar.swift" "$TOOLS/DivoomControlCenter.swift" "$TOOLS/DivoomPreferences.swift" "$TOOLS/DivoomAtmosphereIcons.swift" "$TOOLS/DivoomDeviceSetup.swift" "$TOOLS/DivoomBluetooth.swift" "$TOOLS/DivoomZstd.swift" "$TOOLS/DivoomClockFrame.swift" \
+    "${ZSTD_OBJS[@]}" \
+    -import-objc-header "$TOOLS/vendor/zstd-1.5.7/DivoomZstdBridge.h" \
+    -Xcc -I"$ZSTD_LIB" \
     -framework AppKit \
     -framework SwiftUI \
     -framework Network \

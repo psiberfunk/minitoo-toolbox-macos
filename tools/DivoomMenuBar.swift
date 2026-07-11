@@ -451,16 +451,30 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func activateClock(_ shortcut: String, completion: ((Bool, String) -> Void)? = nil) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            if !self.isDaemonRunning() {
-                self.setStatus("Daemon not running")
-                completion?(false, "Daemon not running")
-                return
+        guard isDaemonRunning() else {
+            setStatus("Daemon not running")
+            completion?(false, "Daemon not running")
+            return
+        }
+        guard let clockId = DivoomClockFrame.resolveClockId(shortcut) else {
+            setStatus("Clock issue: unknown shortcut \(shortcut)")
+            completion?(false, "unknown shortcut \(shortcut)")
+            return
+        }
+        guard let packet = DivoomClockFrame.selectPacket(clockId: clockId) else {
+            setStatus("Clock issue: JSON encode error")
+            completion?(false, "JSON encode error")
+            return
+        }
+        let path = DivoomRawFrame.writePacketsFile(packet, name: "clock-\(clockId)", in: capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let detail = String(result.suffix(700))
+                let hardFailure = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                self.setStatus(hardFailure ? "Clock issue: \(detail)" : "Activated custom face \(shortcut)")
+                completion?(!hardFailure, detail)
             }
-            let (code, out) = self.runPythonTool("clock", scriptName: "divoom_clock.py", arguments: [shortcut])
-            let detail = String(out.suffix(700))
-            self.setStatus(code == 0 ? "Activated custom face \(shortcut)" : "Clock issue: \(detail)")
-            completion?(code == 0, detail)
         }
     }
 
