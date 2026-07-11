@@ -13,6 +13,23 @@ statement of upstream project policy.
 If a new branch depends on something only merged into `personal`, cut it
 from `personal`'s tip instead of clean `main`, and say so in the PR body.
 
+## CI doesn't run for doc-only pushes
+
+`.github/workflows/personal-release.yml`'s push trigger has
+`paths-ignore: ["**/*.md"]` (added 2026-07-11) — a push to `personal`
+that only touches `.md` files (README, PROTOCOL.md, anything under
+`docs/local/`, `THIRD_PARTY_NOTICES.md`, `RELEASE_NOTES.md`) doesn't
+trigger a build/release run at all. A commit that touches even one
+non-`.md` file (source, `Tests/`, the workflow file itself, etc.)
+alongside doc changes still runs normally — the skip only applies when
+*every* changed file matches the ignore pattern. `workflow_dispatch`
+still works regardless, for the rare case of wanting a fresh release
+build/publish for a pure doc change (e.g. to update the bundled copy of
+PROTOCOL.md inside the app resources without any code change). If a
+future session notices CI "didn't run" after a docs-only push, this is
+expected behavior, not a broken workflow — check `paths-ignore` before
+assuming something's wrong.
+
 ## PRs to upstream are opt-in, not a default sync step
 
 As of 2026-07-10, opening or updating a PR against

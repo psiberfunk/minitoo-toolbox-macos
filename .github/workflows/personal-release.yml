@@ -3,6 +3,8 @@ name: Build personal macOS app
 on:
   push:
     branches: [personal]
+    paths-ignore:
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:
