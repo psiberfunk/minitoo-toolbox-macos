@@ -71,8 +71,10 @@ recovery path.
   deletion landed. The original `tools/divoom_*.py` scripts and
   `requirements-app.txt`/`.venv` remain in the repo as standalone
   dev-CLI/protocol-debugging tools, per an explicit decision — they're
-  no longer referenced by the app build at all. Full story, including the
-  zstd C-interop mechanics proof, in `dev-notes.md`.
+  no longer referenced by the app build at all. The vendored zstd test coverage
+  now includes test-only portable decompression and real compression
+  round-trips; production paths remain compression-only. Full story, including
+  the zstd C-interop mechanics proof, in `dev-notes.md`.
 - **Native Bluetooth migration.** `blueutil` has been removed from app setup
   and connection management in favor of public `IOBluetooth`. Scan/pairing
   were physically confirmed; nearby-unpaired discovery and native
@@ -94,6 +96,16 @@ recovery path.
   signing/notarization remains the future hardening step. See
   `docs/local/update-strategy.md`; no Bluetooth/device behavior changed or was
   tested here.
+
+- **Supply-chain security hardening — planned and deferred (2026-07-11).** An
+  authenticated review found no current compromise, but confirmed that neither
+  `personal` nor `main` is protected, the Sparkle signing key is a
+  repository-level Actions secret, and every `personal` push can currently
+  reach a workflow with release authority. The first future hardening unit is
+  to separate unprivileged automatic CI from approval-gated release signing,
+  then pin Actions and verify external FFmpeg source. Full findings,
+  dependency exposure, tradeoffs, and acceptance checks:
+  `docs/local/security-supply-chain-plan.md`.
 
 ## Upstream docs housekeeping
 PR #11's description was updated with a root-cause sentence (no branch diff
