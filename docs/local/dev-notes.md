@@ -679,3 +679,30 @@ matters (here, as unit-test oracle data) -- see
 `swift test`; the `build` job now declares `needs: test`, so a failing
 test blocks the release build/publish steps instead of only being
 visible to whoever happens to run `swift test` locally before pushing.
+
+**Zstd round-trip decompression added same day**, closing the one real
+gap in the initial test pass (compression tests could only check magic
+bytes/determinism, not that compressed data actually decompresses back to
+the original bytes). Vendored `tools/vendor/zstd-1.5.7/lib/decompress/`
+(4 `.c` files from the same official v1.5.7 release tarball already used
+for `lib/common`/`lib/compress` -- re-downloaded and diffed to confirm
+byte-identical provenance) and made `CZstd` a direct `DivoomMiniTooTests`
+dependency so the test file can call `ZSTD_decompress` itself; production
+code (`DivoomZstd.swift`) still only ever compresses. Deliberately did
+not vendor `lib/decompress/huf_decompress_amd64.S` (x86-64 BMI2 assembly
+fast path) -- defined `ZSTD_DISABLE_ASM` instead so both architectures
+use the portable C decode path, avoiding an arch-conditional assembly
+file in a universal build for a path that's only ever exercised by tests.
+Confirmed via the vendored source itself (`portability_macros.h`) that
+this macro has zero effect on `lib/compress`.
+
+**Measured, not assumed, the shipped-binary size impact**: stashed just
+these changes (leaving an unrelated concurrent session's supply-chain
+security review docs untouched via exact-path `git stash push -- <paths>`,
+same technique as the earlier Codex episode), did a clean `swift build -c
+release --product DivoomMiniToo` before and after -- **byte-identical
+size both times** (2,062,368 bytes). The linker's dead-code stripping
+fully eliminates the unreferenced decompress object code from the actual
+shipped app; it only ever gets linked into the test binary, which never
+ships. `THIRD_PARTY_NOTICES.md` updated to reflect that decompress is now
+vendored (test-only) rather than stating it's excluded.
