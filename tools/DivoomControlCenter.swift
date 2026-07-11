@@ -43,6 +43,16 @@ final class ControlCenterModel: ObservableObject {
         }
     }
     private var packetsPath: URL?
+    // Bumped on every buildPreview() call so a slower/earlier build that
+    // finishes after a newer one (e.g. toggling Full Screen right after
+    // picking a file, before the first build finishes) can't clobber the
+    // packetsPath/previewImage pairing set by the build actually in flight.
+    // Each generation also gets its own output subdirectory so two
+    // concurrent builds of the same file (same stem) never race on writing
+    // the same *-packets-lenpref.bin path — a real hazard once the frozen
+    // PyInstaller helper's slower onefile startup widened the window in
+    // which a second build can start before the first one finishes writing.
+    private var buildGeneration = 0
 
     init(app: DivoomMenuBar) {
         self.app = app
@@ -66,12 +76,16 @@ final class ControlCenterModel: ObservableObject {
         packetsPath = nil
         summary = ""
         let wantsFullScreen = fullScreen
+        buildGeneration += 1
+        let generation = buildGeneration
+        let outDir = app.capturesDir.appendingPathComponent("send-\(generation)")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            var args = [url.path, "--build-only", "--out-dir", self.app.capturesDir.path]
+            var args = [url.path, "--build-only", "--out-dir", outDir.path]
             if wantsFullScreen { args.append("--full-screen") }
             let (code, out) = self.app.runPythonTool("send", scriptName: "divoom_send.py", arguments: args)
             DispatchQueue.main.async {
+                guard generation == self.buildGeneration else { return }
                 self.isBusy = false
                 guard code == 0 else {
                     self.status = "Build failed: \(String(out.suffix(500)))"
@@ -154,10 +168,10 @@ struct SendMediaView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                    Text("Full Screen (160×128) is temporarily unavailable after an unacknowledged device crash. Sends use safe 128×128 mode.")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Toggle("Full Screen (160×128)", isOn: $model.fullScreen)
+                        .toggleStyle(.checkbox)
+                        .disabled(model.isBusy)
+                        .help("Use the panel's full rectangular resolution instead of a square center-crop.")
                     if !model.summary.isEmpty {
                         Text(model.summary).font(.caption).foregroundColor(.secondary)
                     }

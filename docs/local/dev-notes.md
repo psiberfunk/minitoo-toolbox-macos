@@ -489,3 +489,80 @@ worth keeping here. This is the last planned rescue pass.
   parsed by Python's own interpreter, not the script — shows up as
   Python's own "Unknown option" usage error instead of the script's. Put
   the script path first, flags after.
+
+## Full-screen send regression: root-cause methodology (2026-07-10)
+
+Diagnosed the "Full-screen (160×128) send crashes the device on the frozen
+build, worked before" report by elimination, per this project's
+capture/verify-before-claiming standard, rather than guessing:
+
+1. Byte-diffed the actual encoder output. Checked out `tools/send_divoom_image.py`
+   from `5457c83` (the commit whose message claims direct hardware
+   confirmation of full-screen sends) into a scratch copy, ran
+   `build_payload()`/`build_packets()` from both that version and current
+   `HEAD` against the same synthetic 800×600 test JPEG at 160×128, and
+   compared the resulting payload/packet bytes directly in a Python REPL.
+   **Identical, byte-for-byte** (61460-byte payload, 242 packets, both
+   versions). This rules out any encoding-side regression (zstd params,
+   block-header bytes, chunking) for still images; the only textual diff
+   between those two file versions is the unrelated `DIVOOM_FFMPEG`
+   bundled-binary lookup in the video path, which a still-image send never
+   executes.
+2. Diffed `tools/DivoomDaemon.swift` (the process that actually writes
+   RFCOMM bytes) across the same range — untouched since `8fd8615`
+   (2026-07-06, a MAC-address-only change), well before the packaging
+   commit. Ruled out the daemon's chunking/delay/ACK-wait logic.
+3. That left exactly one behavioral change in the full-screen send path
+   between the hardware-confirmed commit and the quarantined state: commit
+   `a42c7b8` switched `ControlCenterModel.send()` from re-running the full
+   Python pipeline (which rebuilds the packets file fresh immediately
+   before sending) to resubmitting the packets file already written during
+   the earlier preview (`--build-only`) pass, via the native
+   `DivoomRawFrame.submit`. Re-reading that code path found the actual bug:
+   `divoom_send.py` names its output `*-packets-lenpref.bin` from the
+   media's filename stem alone, with no per-invocation uniqueness. Toggling
+   "Full Screen" (which calls `buildPreview()` again) shortly after picking
+   a file — before the first `buildPreview()` call's `divoom-helper`
+   process has finished writing — starts a second build that writes the
+   *same* output path underneath the first, and a stale completion handler
+   arriving out of order can leave `packetsPath` pointing at a
+   torn/mismatched file relative to what `previewImage` shows. A corrupted
+   packet stream reaching the daemon is a plausible, sufficient explanation
+   for "no final ACK, device visibly crashed."
+4. This race predates the PyInstaller freeze (the file-naming bug existed
+   the whole time `buildPreview()` has worked this way), but freezing
+   `divoom-helper` as a `--onefile` PyInstaller binary meaningfully widened
+   the window: onefile bootloaders self-extract to a fresh temp directory
+   on every launch, adding real per-run startup latency that plain
+   `python3 script.py` never had — long enough for a normal, fast
+   pick-file-then-toggle-fullscreen user action to land inside a still-running
+   first build far more often than before. This is consistent with (without
+   being direct proof of) the reported before/after behavior change.
+
+**Fix**: `ControlCenterModel` now tracks a `buildGeneration` counter, gives
+each `buildPreview()` call its own generation-numbered output subdirectory
+(so two concurrent builds can never share a path), and ignores any
+completion whose generation doesn't match the latest one. The "Full Screen"
+toggle is re-enabled in `SendMediaView`.
+
+**Hardware result (2026-07-10):** user tested directly on the physical
+device — still image and MP4/video, both full-screen and default
+128×128, all four combinations sent and displayed correctly, no crash (all
+had failed at full-screen before this fix). Confirmed fixed in practice.
+
+**Open honesty about root-cause confidence:** before testing, the user
+pushed back that their own recollection of triggering the original crash
+was just "load one file, click Send once or twice" — no toggling, no
+reselecting media. `send()` alone never calls `buildPreview()` again, so
+that exact sequence doesn't obviously exercise the concurrent-build race
+above. The fix demonstrably resolved the crash across a real multi-trial
+test, but given the mismatch with the recalled repro, treat this as
+fixed-in-practice rather than a fully-explained root cause. The next-best
+suspect if this ever regresses again: transfer-duration sensitivity in
+`DivoomDaemon.swift`'s RFCOMM write path (`sendPacket`'s hardcoded 2s
+stale-write timeout per chunk) — full-screen is ~25% more data/packets
+than default, i.e. a longer transfer with proportionally more chances to
+hit that timeout or an ordinary Bluetooth hiccup mid-stream. Worth adding
+duration/chunk-index logging around that timeout the next time this is
+touched, so a future recurrence has real telemetry instead of another
+round of guessing.
