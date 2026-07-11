@@ -13,8 +13,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    name: Run unit tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - name: swift test
+        run: swift test
+
   build:
     name: Build ${{ matrix.label }} slice
+    needs: test
     strategy:
       fail-fast: false
       matrix:

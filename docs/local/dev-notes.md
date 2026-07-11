@@ -673,3 +673,9 @@ correction. Lesson: even this project's own internal docs need the same
 "verify before trusting" treatment as external sources when the value
 matters (here, as unit-test oracle data) -- see
 `feedback_verify_official_claims.md`.
+
+**CI wiring added same day**: a `test` job in
+`.github/workflows/personal-release.yml` checks out the repo and runs
+`swift test`; the `build` job now declares `needs: test`, so a failing
+test blocks the release build/publish steps instead of only being
+visible to whoever happens to run `swift test` locally before pushing.
