@@ -636,6 +636,59 @@ and no `divoom-helper` anywhere (checked directly with `find`) -- only
 PyInstaller onefile blob plus a full `.venv` site-packages tree). App
 launches and daemon starts cleanly post-deletion.
 
+## Control Center window-sizing fixes (2026-07-11)
+
+Fixed the Control Center window getting stuck at a stale size when
+switching between panes of very different sizes (e.g. Atmosphere →
+Send Media left a large dead-space gap on the right and/or bottom).
+Found via user-reported screenshots, root-caused by re-reading the
+actual `DivoomControlCenter.swift` view hierarchy rather than trusting a
+stale in-code comment, and verified via live UI automation (System
+Events/`cliclick`), not screenshots alone -- per
+`.claude/rules/ui-testing-technique.md`'s carve-out that pure layout
+checks don't need physical-device confirmation.
+
+Two compounding bugs, found in two rounds (the first fix looked complete
+until the user's follow-up screenshots showed width was *still* wrong):
+
+1. **Round 1**: a greedy `.frame(maxWidth: .infinity, maxHeight:
+   .infinity, alignment: .topLeading)` wrapped each pane's content,
+   sitting *between* that content's `.fixedSize()` and the
+   `GeometryReader` driving the window resize (`sizesControlCenterWindow`).
+   A greedy frame like this reports its own size upward as whatever was
+   *proposed* to it, not its child's true size -- so once the window grew
+   for a big pane, every subsequent pane's reported size was just the
+   window's own stale size fed back to it, in both dimensions. Fixed by
+   deleting the two greedy frames and changing `.fixedSize(horizontal:
+   true, vertical: false)` to `.fixedSize()` (both axes) on
+   `detailView(for:)`/`functionGrid`.
+2. **Round 2**: after Round 1, height reliably shrank but width still
+   didn't -- caught because the user tested with real screenshots after
+   visiting Photo Album (genuinely wide content) rather than trusting my
+   first "looks fixed" claim. Root cause: a plain `Divider()` between
+   `DeviceControlsBar` and the active pane sits in the *outer* root
+   `VStack`, which had no `.fixedSize()` of its own. A bare `Divider()`
+   has no intrinsic width -- it always echoes back whatever width its
+   parent proposes, which was still the window's stale frame. Fixed by
+   adding `.fixedSize()` to the outer root `VStack` itself, so the
+   Divider (and anything else at that level) resolves against the
+   subtree's true ideal size instead.
+
+Also wrapped Photo Album's long one-line description text
+(`.frame(maxWidth: 436, alignment: .leading)` +
+`.fixedSize(horizontal: false, vertical: true)`) so it no longer forces
+the whole window wider than every other pane just to fit on one line --
+that was the trigger that made Round 2's bug visible in the first place.
+
+Verified across every pane, round-tripping through the Functions grid
+each time: Send Media (true width 476pt, previously misreported as 594
+by coincidence), White Noise (398pt), Custom Faces (365pt), Photo Album
+(635pt before the text wrap / 476pt after), Atmosphere (365pt -- its
+background grid uses fixed 36pt columns, not adaptive, so it's actually
+one of the narrower panes once measured correctly), Device Settings
+(365pt). Pushed and monitored the release build to a green terminal
+result both rounds.
+
 ## First unit test suite (2026-07-11)
 
 Added `Tests/DivoomMiniTooTests/` (Swift Testing, `import Testing`/`@Test`/
@@ -680,6 +733,21 @@ matters (here, as unit-test oracle data) -- see
 test blocks the release build/publish steps instead of only being
 visible to whoever happens to run `swift test` locally before pushing.
 
+**Strengthened same day, prompted by the user asking whether the tests
+were "lipservice" or actually catching things**: added a property-based
+test (`reconstructsOriginalPayloadAcrossManySizes`) that reconstructs the
+original payload from chunk bytes across ~16 payload sizes (0-600), not
+just the 2-3 hand-picked boundary cases already covered -- a much
+stronger correctness guarantee for `DivoomChunkedUpload.packets`. Also
+found and fixed a real latent bug while doing this: `chunkSize <= 0`
+never advanced `offset` and would hang forever; not reachable from any
+current call site (both real callers use the default), but now clamped
+to `max(chunkSize, 1)` with a regression test. Also added
+`DivoomImageResizeTests` covering `DivoomImageResize`'s cover-crop/resize
+math and alpha-stripping (`coverResize`/`rgb24Bytes`), which had zero
+coverage before this -- synthetic in-memory/temp-file images, no fixture
+files or device involved.
+
 **Zstd round-trip decompression added same day**, closing the one real
 gap in the initial test pass (compression tests could only check magic
 bytes/determinism, not that compressed data actually decompresses back to
@@ -706,3 +774,57 @@ fully eliminates the unreferenced decompress object code from the actual
 shipped app; it only ever gets linked into the test binary, which never
 ships. `THIRD_PARTY_NOTICES.md` updated to reflect that decompress is now
 vendored (test-only) rather than stating it's excluded.
+
+## Untangling a concurrent session's accidental commit (2026-07-11)
+
+Right after the zstd-decompress work above, a routine `git status` check
+turned up something unexpected: the working tree was already clean and
+`personal` already matched `fork/personal`, even though nothing had been
+committed via an explicit `git commit`/`git push` from this session. Two
+commits had appeared (`4572dfc`, `eeb9c05`), already pushed, authored
+under the repo's normal git identity. Diagnosis: a concurrent Codex
+session (working on a separate supply-chain security review) had run a
+broad `git add`/commit at some point and swept up this session's
+in-progress, uncommitted zstd-decompress edits (`Package.swift`,
+`THIRD_PARTY_NOTICES.md`, `DivoomZstdTests.swift`, the vendored decompress
+source) into the same commit as its own `docs/local/status.md`/
+`docs/local/security-supply-chain-plan.md` changes -- two unrelated
+workstreams bundled into one commit with a combined, half-accurate
+message.
+
+Nothing was actually lost or corrupted (diffed every file against what
+had actually been written; ran the full local test suite, the real
+`tools/build-divoom-app.sh` production build, and confirmed the CI runs
+those pushes triggered were green) -- the only real damage was commit
+attribution/organization, not content.
+
+**Fix**: split the mixed commit back into three clean, correctly
+attributed commits, using a temp branch from the last known-clean commit
+(`git branch personal-rebase-tmp 20b6f41`), selectively restoring each
+commit's own files from the mixed commit
+(`git checkout 4572dfc -- <exact paths>`) into separate commits, plus a
+clean `git cherry-pick` for the one commit that was already
+single-purpose. Before touching `personal`, verified the split branch's
+final tree was byte-identical to the original mixed history
+(`git diff eeb9c05 personal-rebase-tmp` -- empty output confirms a pure
+reorganization, no content drift) -- only then moved `personal` to the
+new tip and force-pushed, using `--force-with-lease` (re-fetching to
+confirm the remote hadn't moved again right before pushing) so it would
+fail safely instead of clobbering anything if the concurrent session
+pushed again in the meantime. The force-push itself required the user to
+explicitly say "force push" -- a vaguer "yes, fix it" was correctly
+rejected by the environment's own safety classifier as insufficient
+consent for rewriting shared, already-pushed history.
+
+Sent the concurrent session (Codex) a clear handoff message: what
+happened, that its own supply-chain content was preserved intact just in
+its own commit now, that its local view of `personal` is now stale (it
+should `git fetch`+reset to the new tip rather than pushing again from
+the old one), and a suggestion to scope any auto-commit behavior to
+specific paths rather than a broad `git add -A`/`git commit -a` given
+this working tree is sometimes shared with other concurrent sessions.
+See [[feedback_concurrent_agent_wip]] for the general pattern (this is
+its own distinct lesson though -- that memory covers *stashing* another
+session's uncommitted WIP before it interferes; this one covers
+*detecting and untangling* an already-committed-and-pushed entanglement
+after the fact).

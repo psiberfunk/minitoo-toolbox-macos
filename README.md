@@ -105,6 +105,21 @@ On launch, the app:
 2. Starts the Swift RFCOMM daemon.
 3. Keeps the daemon available from the menu bar.
 
+## Running tests
+
+```bash
+swift test
+```
+
+Unit tests (`Tests/DivoomMiniTooTests/`) cover the pure protocol/encoding
+logic only -- frame checksums, chunked-upload packet layout, clock-face
+JSON frames, photo/media payload headers, zstd compression (including a
+real compress-then-decompress round-trip), and image resize/crop math.
+No Bluetooth connection or physical device is needed. SwiftUI views and
+anything Bluetooth/hardware-facing aren't covered by this suite and still
+need manual testing against a real MiniToo. CI runs this same command on
+every push to `personal` and blocks the release build on a failure.
+
 ## Installing a release build
 
 Download and open `Divoom-MiniToo-macos-universal.dmg`, then drag **Divoom
