@@ -642,6 +642,10 @@ final class PhotoAlbumModel: ObservableObject {
     @Published var summary: String = ""
     @Published var status: String = "Choose a photo to add it to the device's photo album."
     @Published var isBusy: Bool = false
+    private var packetsPath: URL?
+    // Same generation-guard pattern as ControlCenterModel (see its comment) --
+    // avoids two concurrent buildPreview() calls racing on the same output path.
+    private var buildGeneration = 0
 
     init(app: DivoomMenuBar) {
         self.app = app
@@ -662,49 +666,46 @@ final class PhotoAlbumModel: ObservableObject {
         isBusy = true
         status = "Building preview…"
         previewImage = nil
+        packetsPath = nil
         summary = ""
+        buildGeneration += 1
+        let generation = buildGeneration
+        let outDir = app.capturesDir.appendingPathComponent("album-\(generation)")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let (code, out) = self.app.runPythonTool("album", scriptName: "divoom_album.py", arguments: ["--out-dir", self.app.capturesDir.path, "--build-only", "add-photo", url.path])
-            DispatchQueue.main.async {
-                self.isBusy = false
-                guard code == 0 else {
-                    self.status = "Build failed: \(String(out.suffix(500)))"
-                    return
+            do {
+                let result = try DivoomAlbumEncode.buildAlbumUpload(imageURL: url, outDir: outDir)
+                DispatchQueue.main.async {
+                    guard generation == self.buildGeneration else { return }
+                    self.isBusy = false
+                    self.packetsPath = result.packetsPath
+                    self.previewImage = NSImage(cgImage: result.previewImage, size: .zero)
+                    self.summary = "jpeg=\(result.jpegByteCount)B (\(DivoomAlbumEncode.panelWidth)x\(DivoomAlbumEncode.panelHeight))"
+                    self.status = "Preview ready — review it, then add to the album."
                 }
-                var previewPath: String?
-                for line in out.split(separator: "\n", omittingEmptySubsequences: true) {
-                    let line = String(line)
-                    if line.hasPrefix("preview=") {
-                        previewPath = String(line.dropFirst("preview=".count))
-                    } else if line.hasPrefix("jpeg=") {
-                        self.summary = line
-                    }
+            } catch {
+                DispatchQueue.main.async {
+                    guard generation == self.buildGeneration else { return }
+                    self.isBusy = false
+                    self.status = "Build failed: \(error)"
                 }
-                if let previewPath {
-                    self.previewImage = NSImage(contentsOfFile: previewPath)
-                }
-                self.status = self.previewImage != nil
-                    ? "Preview ready — review it, then add to the album."
-                    : "Build finished but couldn't parse the preview path."
             }
         }
     }
 
     func send() {
-        guard let mediaURL else { return }
+        guard let packetsPath else { return }
         guard app.isDaemonRunning() else {
             status = "Daemon not running — start it from the menu first."
             return
         }
         isBusy = true
         status = "Adding to photo album…"
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            let (code, out) = self.app.runPythonTool("album", scriptName: "divoom_album.py", arguments: ["--out-dir", self.app.capturesDir.path, "add-photo", mediaURL.path])
+        DivoomRawFrame.submit(packetsPath: packetsPath, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
             DispatchQueue.main.async {
+                guard let self else { return }
                 self.isBusy = false
-                self.status = code == 0 ? "Added to photo album." : "Issue: \(String(out.suffix(500)))"
+                self.status = result.contains("\"ok\":true") ? "Added to photo album." : "Issue: \(String(result.suffix(500)))"
             }
         }
     }
