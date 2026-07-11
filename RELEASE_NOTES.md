@@ -23,4 +23,6 @@ and confirm **Open**.
 
 When installing a verified in-app update, the app also offers an explicit,
 default-checked quarantine-removal choice before restart. It applies only to
-that staged app update; it never changes Gatekeeper globally.
+that staged app update; it never changes Gatekeeper globally. Tested behavior
+is one Gatekeeper clearance for the initial DMG install, with no additional
+Gatekeeper step for subsequent in-app updates.

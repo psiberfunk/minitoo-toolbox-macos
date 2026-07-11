@@ -78,7 +78,7 @@ recovery path.
   were physically confirmed; nearby-unpaired discovery and native
   disconnect → RFCOMM-open / reconnect audio remain explicit release checks.
 
-- **Self-update / Sparkle — in progress (2026-07-11).** The app now has a
+- **Self-update / Sparkle — done for the ad-hoc-signing phase (2026-07-11).** The app now has a
   pinned SwiftPM/Sparkle update path, embedded repository/branch/channel build
   provenance, first-launch update consent, Preferences/About visibility, and
   a branch-locked signed-feed workflow design. The pre-notarization relaunch
@@ -87,10 +87,13 @@ recovery path.
   packaging and appcast-generation checks pass. Hosted CI publication passed
   end-to-end in run `29154079898`: both architecture slices, universal DMG,
   signed one-item Personal appcast, immutable update ZIP, and release publish
-  all succeeded. First user launch/UI and real in-app update-install
-  confirmation remain required. The CI design retains only the newest three
-  immutable update releases. See `docs/local/update-strategy.md`; no
-  Bluetooth/device behavior changed or was tested here.
+  all succeeded. The user then confirmed first-launch consent, branch/build
+  provenance UI, and a real in-app update: Gatekeeper clearance is required
+  only for the initial DMG install, not subsequent verified updates. The CI
+  design retains only the newest three immutable update releases. Developer ID
+  signing/notarization remains the future hardening step. See
+  `docs/local/update-strategy.md`; no Bluetooth/device behavior changed or was
+  tested here.
 
 ## Upstream docs housekeeping
 PR #11's description was updated with a root-cause sentence (no branch diff

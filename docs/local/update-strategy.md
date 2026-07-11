@@ -46,8 +46,10 @@ build, source repo, source branch/channel, short commit, and a manual
 On first normal launch, ask whether to enable automatic updates.  The primary
 choice is **Enable Automatic Updates**; **Not Now** is remembered and can be
 changed later in Preferences.  When enabled, checks are quiet and deferred
-until startup has settled.  A ready update never interrupts an active media
-send; it is installed only after the user chooses to restart.
+until startup has settled. There is no automatic installation or relaunch: an
+update installs only after the user chooses to restart. A dedicated
+active-media-send install guard is not yet implemented or tested, so do not
+select restart while a transfer is active.
 
 The standard install dialog will say which version and channel were verified.
 It offers a default-checked, explicit transitional option for ad-hoc builds:
@@ -150,5 +152,8 @@ changed by this work.
   universal bundle and appcast-generation rehearsals passed. Hosted release
   run `29154079898` then passed end-to-end: both native slices, universal
   assembly, signed appcast, immutable update ZIP, and rolling-release publish.
-  A user launch/UI check and a real in-app update-install check remain the
-  next gates.
+  The user then confirmed the first-launch/UI flow and a real in-app update:
+  Gatekeeper clearance is needed once for the initial DMG installation, while
+  subsequent verified in-app updates relaunch without another Gatekeeper step.
+  Remaining hardening is Developer ID signing and notarization; the
+  active-media-send restart guard remains an explicit future UX safeguard.

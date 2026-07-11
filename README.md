@@ -132,7 +132,9 @@ While releases are ad-hoc signed, a chosen update presents a visible,
 default-checked option to remove quarantine from the already-verified update
 bundle before relaunch. It affects that app bundle only and does not disable
 Gatekeeper globally. The option will go away once releases are Developer ID
-signed and notarized.
+signed and notarized. **Tested current behavior:** Gatekeeper clearance is
+needed only for the initial DMG install; subsequent verified in-app updates
+launch without another Gatekeeper step.
 
 The accompanying FFmpeg source archive and [third-party notices](THIRD_PARTY_NOTICES.md)
 are included for the bundled video converter.
