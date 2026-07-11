@@ -469,9 +469,12 @@ behavior. Atmosphere configuration remains a complete, safe feature; only
 live lyric delivery alongside MiniToo audio is shelved.
 
 ## Legacy rescue, second pass
-`project_divoom_minitoo.md` (the old memory file) is being kept as an
-unindexed archive, not deleted — a second look turned up 3 more items
-worth keeping here. This is the last planned rescue pass.
+`project_divoom_minitoo.md` (the old memory file) was kept as an unindexed
+archive for a while rather than deleted outright — a second look turned up
+3 more items worth keeping here. That was the last planned rescue pass;
+the file itself was deleted 2026-07-11 once this rescue was confirmed
+complete and the file was confirmed stale (a memory/documentation
+structure audit found it described long-superseded states as current).
 
 - **Daemon job protocol**: never bundle more than one packet into a single
   daemon job unless it's a genuine chunked transfer (image/GIF upload) —
@@ -823,8 +826,8 @@ should `git fetch`+reset to the new tip rather than pushing again from
 the old one), and a suggestion to scope any auto-commit behavior to
 specific paths rather than a broad `git add -A`/`git commit -a` given
 this working tree is sometimes shared with other concurrent sessions.
-See [[feedback_concurrent_agent_wip]] for the general pattern (this is
-its own distinct lesson though -- that memory covers *stashing* another
-session's uncommitted WIP before it interferes; this one covers
-*detecting and untangling* an already-committed-and-pushed entanglement
-after the fact).
+See `branch-workflow.md`'s "Concurrent sessions in the same working tree"
+section for the general pattern this now lives under -- it covers both
+this (detecting and untangling an already-committed-and-pushed
+entanglement) and the earlier, distinct lesson (stashing another
+session's uncommitted WIP before it interferes).
