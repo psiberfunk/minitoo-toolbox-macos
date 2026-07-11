@@ -148,4 +148,7 @@ changed by this work.
   one-item appcast and immutable update ZIP, publish the feed on
   `personal-latest`, and retain three `personal-update-*` releases. Local
   universal bundle and appcast-generation rehearsals passed. Hosted release
-  publication and a user launch/UI check remain the next gates.
+  run `29154079898` then passed end-to-end: both native slices, universal
+  assembly, signed appcast, immutable update ZIP, and rolling-release publish.
+  A user launch/UI check and a real in-app update-install check remain the
+  next gates.

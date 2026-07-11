@@ -84,11 +84,13 @@ recovery path.
   a branch-locked signed-feed workflow design. The pre-notarization relaunch
   flow gives the user an explicit, default-checked choice to remove quarantine
   from the verified staged update; it never does so silently. Local universal
-  packaging and appcast-generation checks pass, but this updater-enabled build
-  has not yet completed its hosted CI publication or received user launch/UI
-  confirmation. The CI design retains only the newest three immutable update
-  releases. See `docs/local/update-strategy.md`; no Bluetooth/device behavior
-  changed or was tested here.
+  packaging and appcast-generation checks pass. Hosted CI publication passed
+  end-to-end in run `29154079898`: both architecture slices, universal DMG,
+  signed one-item Personal appcast, immutable update ZIP, and release publish
+  all succeeded. First user launch/UI and real in-app update-install
+  confirmation remain required. The CI design retains only the newest three
+  immutable update releases. See `docs/local/update-strategy.md`; no
+  Bluetooth/device behavior changed or was tested here.
 
 ## Upstream docs housekeeping
 PR #11's description was updated with a root-cause sentence (no branch diff
