@@ -64,3 +64,53 @@ relicense, or publish a differently branded app now.
 ## Historical note
 Every PR branch used to require swapping the real device MAC for a
 placeholder before pushing. Obsolete now — no file hardcodes a MAC anymore.
+
+## Concurrent sessions in the same working tree
+
+This project runs both Claude and Codex sessions against the same
+`divoom-minitoo-osx` checkout, sometimes at the same time. Two distinct
+failure modes have come up, with two different fixes:
+
+**Before starting work — another session's uncommitted WIP is sitting in
+the tree.** Don't try to work around it in place or guess which parts are
+"safe" to ignore, especially if it touches the same build script/system
+you need to test against. `git stash push -u -m "<label>" -- <exact
+paths>` (confirm exact paths via `git status --short` first, so you stash
+only their files, not your own new/untracked work mixed into the same
+directory), do your work against the clean committed baseline, then
+restore their stash after your own commits land. Don't auto-merge their
+stash back in yourself — the conflicts are usually structural, and only
+the other session has the context to resolve them correctly. Instead,
+leave a mechanism-level handoff note (not just "there will be conflicts,"
+but "your `Package.swift` needs these N files added" specifics) so they
+can act without re-deriving the analysis.
+
+**After the fact — a concurrent session's own commit swept up your
+uncommitted changes.** Don't assume a clean `git status` mid-task means
+nothing happened: a concurrent session's auto-commit behavior (or a broad
+`git add -A`/`git commit -a`) can bundle your edits into its own commit
+without you ever running `git commit`. Watch for `git status` reporting
+the branch already matching its remote, or "ahead of fork by N commits,"
+when you don't recall pushing — that's the tell. If it happens:
+1. Diff every affected file against what you actually intended (usual
+   outcome: content is fine, just misattributed/bundled, not corrupted).
+2. To split a mixed commit: create a temp branch from the last
+   known-clean commit, `git checkout <mixed-commit> -- <exact paths for
+   commit A>` and commit, repeat for commit B's paths, cherry-pick any
+   commits that were already single-purpose.
+3. Before touching the real branch, verify the split is a pure
+   reorganization: `git diff <old-tip> <new-tip>` must be empty.
+4. Move the branch to the new tip and push with `--force-with-lease`
+   (re-fetch immediately before pushing to catch a second concurrent
+   push), never plain `--force`.
+5. Force-pushing shared history needs the user to say "force push"
+   explicitly — a vaguer "yes, fix it" is correctly insufficient consent
+   for this specific action; don't route around that gate.
+6. Send the other session a handoff: what happened, that its content is
+   intact (just in its own commit now), and that its local view of the
+   branch is stale post-force-push (fetch+reset, don't push again from
+   the old tip).
+
+Full incident writeup (2026-07-11, a Codex supply-chain-review commit
+swept up this session's zstd-decompress test changes): `dev-notes.md`'s
+"Untangling a concurrent session's accidental commit" section.
