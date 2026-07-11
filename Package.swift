@@ -65,6 +65,17 @@ let package = Package(
                 .headerSearchPath("lib"),
                 .headerSearchPath("lib/common"),
                 .headerSearchPath("lib/compress"),
+                .headerSearchPath("lib/decompress"),
+                // lib/decompress's x86-64 BMI2 fast-path assembly
+                // (huf_decompress_amd64.S) isn't vendored -- this disables
+                // that optional optimization so the portable C path is used
+                // instead, avoiding an arch-conditional assembly file in a
+                // universal arm64+x86_64 build. Decompression here is only
+                // ever used by tests, never a real-time device path, so the
+                // speed cost doesn't matter. Confirmed via the vendored
+                // source itself (portability_macros.h) that this macro has
+                // zero effect on lib/compress -- nothing there references it.
+                .define("ZSTD_DISABLE_ASM"),
             ]
         ),
         .executableTarget(
@@ -90,7 +101,10 @@ let package = Package(
         ),
         .testTarget(
             name: "DivoomMiniTooTests",
-            dependencies: ["DivoomMiniToo"]
+            // CZstd is a direct dependency here (not just transitive via
+            // DivoomMiniToo) so tests can call ZSTD_decompress directly --
+            // production code never needs to decompress, only tests do.
+            dependencies: ["DivoomMiniToo", "CZstd"]
         ),
     ],
     // Keep this existing AppKit codebase on the same language-mode behavior
