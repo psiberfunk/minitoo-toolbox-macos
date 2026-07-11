@@ -754,9 +754,16 @@ struct PhotoAlbumView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Photo Album").font(.headline)
+            // Capped to the width of the row below (220 image + 16 spacing
+            // + 200 info column) so this sentence wraps instead of forcing
+            // the whole window wider than every other pane just to fit one
+            // line -- fixedSize(vertical: true) lets it grow to as many
+            // wrapped lines as it needs while staying capped horizontally.
             Text("Adds a photo to the device's own persistent photo gallery — it stays there across reboots, unlike Send Media's live preview.")
                 .font(.caption)
                 .foregroundColor(.secondary)
+                .frame(maxWidth: 436, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .top, spacing: 16) {
                 ZStack {
@@ -1400,33 +1407,45 @@ struct ControlCenterView: View {
                         .padding([.top, .horizontal], 8)
 
                         // fixedSize forces this screen to report its own
-                        // true intrinsic width instead of greedily
-                        // accepting whatever width the *previous* screen
-                        // left the window at -- without it, a narrower
-                        // screen opened right after a wider one (e.g.
-                        // Device Settings after the icon grid) gets stuck
-                        // at the old wider size, since a plain
-                        // maxWidth:.infinity child just fills whatever's
-                        // already proposed rather than reporting what it
-                        // actually needs.
+                        // true intrinsic width AND height instead of
+                        // greedily accepting whatever size the *previous*
+                        // screen left the window at -- without it, a
+                        // smaller screen opened right after a bigger one
+                        // (e.g. Send Media after Atmosphere) gets stuck at
+                        // the old bigger size. There must be no
+                        // maxWidth/maxHeight:.infinity frame between this
+                        // and the GeometryReader driving the window resize
+                        // (see sizesControlCenterWindow below) -- such a
+                        // frame reports back whatever size was proposed to
+                        // it rather than this view's true fixedSize, which
+                        // silently defeats the whole mechanism in both
+                        // directions.
                         detailView(for: selection)
-                            .fixedSize(horizontal: true, vertical: false)
+                            .fixedSize()
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
                     functionGrid
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .fixedSize()
                 }
             }
         }
+        // fixedSize here (in addition to the per-pane fixedSize calls
+        // above) is what actually matters for width: the plain Divider()
+        // between the controls bar and the active pane has no intrinsic
+        // width of its own -- it always reports back whatever width its
+        // parent proposes. Without fixedSize on this whole VStack, that
+        // proposal comes from the window's current (possibly stale, too
+        // wide) frame on every layout pass, so the Divider echoes the old
+        // width back up regardless of how correctly the active pane
+        // reports its own size, and the window never shrinks narrower
+        // than the widest pane ever shown. fixedSize forces this whole
+        // subtree to compute its true ideal size instead, which resolves
+        // the Divider to whatever its more rigid siblings actually need.
+        .fixedSize()
         // Measured once here, over the whole window's actual content (the
         // device-controls bar plus whichever screen is showing) — a single
         // source of truth instead of every screen resizing the window to
         // just its own subtree and silently omitting this bar's height.
-        // Without this, every status label change still re-centers the
-        // *whole* screen if it's only as wide as its widest child — see the
-        // per-screen frame(alignment: .topLeading) calls above.
         .sizesControlCenterWindow(sendModel.app)
     }
 
