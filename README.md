@@ -119,6 +119,21 @@ requested by macOS when needed.
 The DMG opens in an icon view with the app and installation guide centered in
 the two reserved panels of its pixel-art background.
 
+### Updates
+
+Updater-enabled releases ask once on their first normal launch whether to
+check automatically for updates. Updates remain locked to the repository and
+branch/channel embedded in that build—for example, a `personal` build checks
+only the Personal feed, never a generic GitHub "latest" release. Preferences
+shows the exact source repository, branch, channel, commit, and build number,
+and provides a manual **Check for Updates…** action.
+
+While releases are ad-hoc signed, a chosen update presents a visible,
+default-checked option to remove quarantine from the already-verified update
+bundle before relaunch. It affects that app bundle only and does not disable
+Gatekeeper globally. The option will go away once releases are Developer ID
+signed and notarized.
+
 The accompanying FFmpeg source archive and [third-party notices](THIRD_PARTY_NOTICES.md)
 are included for the bundled video converter.
 

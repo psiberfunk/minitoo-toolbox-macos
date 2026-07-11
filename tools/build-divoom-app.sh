@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOLS="$ROOT/tools"
 BUILD="$ROOT/build"
+SWIFT_BUILD="$BUILD/swiftpm"
 APP="$BUILD/Divoom MiniToo.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -13,42 +14,33 @@ RESOURCES="$CONTENTS/Resources"
 ARCHS="${DIVOOM_ARCHS:-$(uname -m)}"
 APP_VERSION="${DIVOOM_APP_VERSION:-0.1.0-alpha.1}"
 BUILD_VERSION="${DIVOOM_BUILD_VERSION:-1}"
+SOURCE_REPOSITORY="${DIVOOM_SOURCE_REPOSITORY:-psiberfunk/divoom-minitoo-osx}"
+SOURCE_BRANCH="${DIVOOM_SOURCE_BRANCH:-$(git -C "$ROOT" branch --show-current 2>/dev/null || echo local)}"
+UPDATE_CHANNEL="${DIVOOM_UPDATE_CHANNEL:-$SOURCE_BRANCH}"
+UPDATE_FEED_URL="${DIVOOM_UPDATE_FEED_URL:-}"
+SPARKLE_PUBLIC_KEY="${DIVOOM_SPARKLE_PUBLIC_KEY:-}"
+BUILD_COMMIT="${DIVOOM_BUILD_COMMIT:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo local)}"
+BUILD_RUN="${DIVOOM_BUILD_RUN:-$BUILD_VERSION}"
 
 mkdir -p "$BUILD"
-
-mkdir -p "$BUILD"
+mkdir -p "$SWIFT_BUILD"
 for ARCH in $ARCHS; do
   case "$ARCH" in
     arm64|x86_64) ;;
     *) echo "unsupported architecture: $ARCH" >&2; exit 2 ;;
   esac
 
-  TARGET="$ARCH-apple-macos12.0"
-  echo "Building Swift daemon ($ARCH)..."
-  swiftc -target "$TARGET" "$TOOLS/DivoomDaemon.swift" \
-    -framework Foundation \
-    -framework IOBluetooth \
-    -framework Network \
-    -o "$BUILD/divoom-daemon-$ARCH"
-
-  echo "Building vendored zstd ($ARCH)..."
-  bash "$TOOLS/build-zstd.sh" "$ARCH"
-  ZSTD_LIB="$TOOLS/vendor/zstd-1.5.7/lib"
-  ZSTD_OBJS=("$BUILD/zstd/$ARCH"/*.o)
-
-  echo "Building menu-bar app executable ($ARCH)..."
-  swiftc -target "$TARGET" "$TOOLS/DivoomMenuBar.swift" "$TOOLS/DivoomControlCenter.swift" "$TOOLS/DivoomPreferences.swift" "$TOOLS/DivoomAtmosphereIcons.swift" "$TOOLS/DivoomDeviceSetup.swift" "$TOOLS/DivoomBluetooth.swift" "$TOOLS/DivoomZstd.swift" "$TOOLS/DivoomClockFrame.swift" "$TOOLS/DivoomChunkedUpload.swift" "$TOOLS/DivoomImageResize.swift" "$TOOLS/DivoomAlbumEncode.swift" "$TOOLS/DivoomMediaEncode.swift" "$TOOLS/DivoomProcess.swift" \
-    "${ZSTD_OBJS[@]}" \
-    -import-objc-header "$TOOLS/vendor/zstd-1.5.7/DivoomZstdBridge.h" \
-    -Xcc -I"$ZSTD_LIB" \
-    -framework AppKit \
-    -framework SwiftUI \
-    -framework Network \
-    -framework CoreGraphics \
-    -framework CoreImage \
-    -framework ImageIO \
-    -framework UniformTypeIdentifiers \
-    -o "$BUILD/divoom-menubar-$ARCH"
+  SCRATCH="$SWIFT_BUILD/$ARCH"
+  echo "Building Swift Package menu-bar app ($ARCH)..."
+  swift build --scratch-path "$SCRATCH" --configuration release --arch "$ARCH" --product DivoomMiniToo
+  echo "Building Swift Package daemon ($ARCH)..."
+  swift build --scratch-path "$SCRATCH" --configuration release --arch "$ARCH" --product DivoomDaemon
+  BIN_PATH="$(swift build --scratch-path "$SCRATCH" --configuration release --arch "$ARCH" --show-bin-path)"
+  cp "$BIN_PATH/DivoomMiniToo" "$BUILD/divoom-menubar-$ARCH"
+  cp "$BIN_PATH/DivoomDaemon" "$BUILD/divoom-daemon-$ARCH"
+  if [[ ! -d "$BUILD/Sparkle.framework" ]]; then
+    ditto "$BIN_PATH/Sparkle.framework" "$BUILD/Sparkle.framework"
+  fi
 done
 
 build_universal_binary() {
@@ -75,10 +67,11 @@ cp "$BUILD/divoom-menubar" "$TOOLS/divoom-menubar"
 
 echo "Packaging $APP..."
 rm -rf "$APP"
-mkdir -p "$MACOS" "$RESOURCES/tools"
+mkdir -p "$MACOS" "$RESOURCES/tools" "$CONTENTS/Frameworks"
 
 cp "$BUILD/divoom-menubar" "$MACOS/DivoomMiniToo"
 cp "$BUILD/divoom-daemon" "$RESOURCES/tools/divoom-daemon"
+ditto "$BUILD/Sparkle.framework" "$CONTENTS/Frameworks/Sparkle.framework"
 cp "$ROOT/PROTOCOL.md" "$RESOURCES/PROTOCOL.md"
 cp "$ROOT/assets/AppIcon.icns" "$RESOURCES/AppIcon.icns"
 if [[ -x "$BUILD/ffmpeg/ffmpeg" ]]; then
@@ -112,6 +105,30 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
   <string>$BUILD_VERSION</string>
+  <key>DivoomSourceRepository</key>
+  <string>$SOURCE_REPOSITORY</string>
+  <key>DivoomSourceBranch</key>
+  <string>$SOURCE_BRANCH</string>
+  <key>DivoomUpdateChannel</key>
+  <string>$UPDATE_CHANNEL</string>
+  <key>DivoomUpdateFeedURL</key>
+  <string>$UPDATE_FEED_URL</string>
+  <key>SUFeedURL</key>
+  <string>$UPDATE_FEED_URL</string>
+  <key>SUPublicEDKey</key>
+  <string>$SPARKLE_PUBLIC_KEY</string>
+  <key>SUEnableAutomaticChecks</key>
+  <false/>
+  <key>SUAllowsAutomaticUpdates</key>
+  <false/>
+  <key>SURequireSignedFeed</key>
+  <true/>
+  <key>SUVerifyUpdateBeforeExtraction</key>
+  <true/>
+  <key>DivoomBuildCommit</key>
+  <string>$BUILD_COMMIT</string>
+  <key>DivoomBuildRun</key>
+  <string>$BUILD_RUN</string>
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
   <key>LSUIElement</key>

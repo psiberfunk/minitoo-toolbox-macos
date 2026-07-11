@@ -16,9 +16,11 @@ lives in `docs/local/branch-workflow.md`.
 
 ## Stepwise rollout
 
-1. Build arm64 and x86_64 Swift slices, freeze the Python-backed media helper
-   once per architecture, and assemble a universal app. **Implemented; local
-   compile/package checks passed.**
+1. Build arm64 and x86_64 Swift slices from the pinned Swift Package, link
+   native media support (including vendored zstd), and assemble a universal
+   app. The outer shell packager remains responsible for the app bundle,
+   FFmpeg, signing, and DMG. **Implemented; local compile/package checks
+   passed.**
 2. Replace the external `blueutil` CLI with public IOBluetooth APIs for scan,
    pairing, disconnect/reconnect, and connection-state checks. **Implemented
    in code; the scan deliberately distinguishes a real nearby inquiry from
@@ -31,8 +33,8 @@ lives in `docs/local/branch-workflow.md`.
    successful CI release.**
 4. Publish the rolling `personal-latest` prerelease only after the local
    hardware checklist below passes. The first push is also the first real CI
-   validation of both hosted macOS architectures, frozen helpers, FFmpeg
-   builds, release permissions, and universal assembly.
+   validation of both hosted macOS architectures, native media support,
+   FFmpeg builds, release permissions, and universal assembly.
 
 ### First CI failure and correction
 
@@ -77,6 +79,25 @@ optional speed-up, never a dependency for a reproducible build.
 The cache was warmed by `29115469899` and then verified by `29116481715` and
 later runs, which restored the two FFmpeg binaries rather than recompiling
 them.
+
+### Self-update rollout (in progress)
+
+The app is moving to Sparkle 2 through the checked-in Swift Package, while
+`tools/build-divoom-app.sh` continues to own app packaging. CI embeds the
+source repository, branch, channel, feed URL, commit, and build number in the
+app. The updater uses only that signed, branch-specific feed, so a Personal
+build cannot silently switch to upstream or a future `main` channel.
+
+Each release will publish a user-facing DMG plus a separate immutable,
+app-only update ZIP. `personal-latest` carries a one-item, signed
+`appcast-personal.xml` that points at the newest immutable ZIP; users therefore
+jump straight to current Personal rather than stepping through old releases.
+The workflow retains only the newest three `personal-update-*` releases. During
+the current ad-hoc-signing period, the app offers—not silently performs—an
+explicit default-checked option to remove the verified update bundle's
+quarantine before restart. Developer ID signing and notarization replace this
+temporary bridge later. See `docs/local/update-strategy.md` for the full plan
+and validation checklist. No device protocol behavior changes in this work.
 
 ### CI monitoring rule
 

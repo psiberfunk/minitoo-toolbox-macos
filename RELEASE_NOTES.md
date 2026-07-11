@@ -10,9 +10,17 @@ This is an early personal alpha build for macOS 12 and later.
 - Video preview displays the first encoded frame; the device receives the
   animation frames.
 - White Noise transport works; its display-mode behavior is accepted as-is.
+- This build can check the signed Personal update feed after first-launch
+  consent. It stays on the embedded Personal repository/branch/channel and
+  downloads only the newest compatible release. Preferences shows its exact
+  source and build information.
 
 The app is ad-hoc signed and not notarized. After dragging it from the DMG to
 Applications, use the short Terminal command in the included `INSTALLING.md` to
 remove quarantine from this app only and launch it. Alternatively, try opening
 the app once, then use **System Settings → Privacy & Security → Open Anyway**
 and confirm **Open**.
+
+When installing a verified in-app update, the app also offers an explicit,
+default-checked quarantine-removal choice before restart. It applies only to
+that staged app update; it never changes Gatekeeper globally.

@@ -8,6 +8,7 @@ captures/
 
 # Local Swift build outputs
 build/
+.build/
 tools/divoom-daemon
 tools/divoom-rfcomm
 tools/divoom-rfcomm-send

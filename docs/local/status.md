@@ -78,6 +78,18 @@ recovery path.
   were physically confirmed; nearby-unpaired discovery and native
   disconnect → RFCOMM-open / reconnect audio remain explicit release checks.
 
+- **Self-update / Sparkle — in progress (2026-07-11).** The app now has a
+  pinned SwiftPM/Sparkle update path, embedded repository/branch/channel build
+  provenance, first-launch update consent, Preferences/About visibility, and
+  a branch-locked signed-feed workflow design. The pre-notarization relaunch
+  flow gives the user an explicit, default-checked choice to remove quarantine
+  from the verified staged update; it never does so silently. Local universal
+  packaging and appcast-generation checks pass, but this updater-enabled build
+  has not yet completed its hosted CI publication or received user launch/UI
+  confirmation. The CI design retains only the newest three immutable update
+  releases. See `docs/local/update-strategy.md`; no Bluetooth/device behavior
+  changed or was tested here.
+
 ## Upstream docs housekeeping
 PR #11's description was updated with a root-cause sentence (no branch diff
 change). PR #16 is a new standalone upstream docs PR carrying the

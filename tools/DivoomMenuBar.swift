@@ -105,6 +105,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var deviceSetupWindow: NSWindow?
     var deviceSetupModel: DeviceSetupModel?
     let batteryMonitor = BatteryMonitorModel()
+    let updateController = DivoomUpdateController()
     var lastMessage = "Ready"
     var lastBrightness: Int = 100
 
@@ -217,6 +218,11 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if UserDefaults.standard.bool(forKey: "ShowBatteryStatus") {
             batteryMonitor.start(usePrivateAPI: UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI"))
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.updateController.startAfterConsentIfNeeded { [weak self] message in
+                self?.setStatus(message)
+            }
+        }
     }
 
     func refreshTitle() {
@@ -256,6 +262,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(debuggingToolsSubmenu())
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(item("Check for Updates…", #selector(checkForUpdatesMenu), enabled: updateController.isConfigured))
         menu.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
         menu.addItem(item("Quit", #selector(quit)))
     }
@@ -519,6 +526,10 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func openCaptures() {
         NSWorkspace.shared.open(capturesDir)
+    }
+
+    @objc func checkForUpdatesMenu() {
+        updateController.checkForUpdates { [weak self] message in self?.setStatus(message) }
     }
 
     @objc func openProtocol() {

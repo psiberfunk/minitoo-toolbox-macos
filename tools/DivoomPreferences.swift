@@ -213,11 +213,16 @@ final class PreferencesModel: ObservableObject {
         }
     }
 
+    @Published var automaticallyCheckForUpdates: Bool {
+        didSet { app.updateController.automaticallyChecks = automaticallyCheckForUpdates }
+    }
+
     init(app: DivoomMenuBar) {
         self.app = app
         self.showDockIcon = app.showDockIcon
         self.showBatteryStatus = UserDefaults.standard.bool(forKey: "ShowBatteryStatus")
         self.useBatteryPrivateAPI = UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI")
+        self.automaticallyCheckForUpdates = app.updateController.automaticallyChecks
         self.deviceAddress = app.address
         self.deviceName = app.deviceName
     }
@@ -290,9 +295,35 @@ struct PreferencesView: View {
                     }
                 }
             }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("About & Updates").font(.subheadline).bold()
+                Text("Version \(DivoomBuildInfo.version) (build \(DivoomBuildInfo.buildRun))")
+                    .font(.caption)
+                if let sourceURL = DivoomBuildInfo.sourceURL {
+                    Link(DivoomBuildInfo.sourceRepository, destination: sourceURL)
+                        .font(.caption)
+                } else {
+                    Text(DivoomBuildInfo.sourceRepository).font(.caption)
+                }
+                Text("Branch: \(DivoomBuildInfo.sourceBranch) · channel: \(DivoomBuildInfo.updateChannel) · commit: \(DivoomBuildInfo.commit)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Toggle("Automatically check for updates", isOn: $model.automaticallyCheckForUpdates)
+                    .disabled(!model.app.updateController.isConfigured)
+                if model.app.updateController.isConfigured {
+                    Button("Check for Updates…") { model.app.checkForUpdatesMenu() }
+                } else {
+                    Text("Updates are not configured in this build yet.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
         }
         .padding(20)
-        .frame(width: 380)
+        .frame(width: 420)
     }
 }
 

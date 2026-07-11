@@ -1,4 +1,5 @@
 import Foundation
+import CZstd
 
 /// Native zstd compression, replacing Python's `zstandard.ZstdCompressionParameters.from_level(level, window_log=..., write_content_size=True)`.
 /// Backed by the vendored zstd 1.5.7 sources (tools/vendor/zstd-1.5.7/,

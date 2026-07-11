@@ -46,7 +46,17 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          DIVOOM_ARCHS=${{ matrix.arch }} DIVOOM_APP_VERSION="0.1.0-alpha.${GITHUB_RUN_NUMBER}" DIVOOM_BUILD_VERSION="${GITHUB_RUN_NUMBER}" bash -x tools/build-divoom-app.sh 2>&1 | tee build-divoom-app.log
+          DIVOOM_ARCHS=${{ matrix.arch }} \
+          DIVOOM_APP_VERSION="0.1.0-alpha.${GITHUB_RUN_NUMBER}" \
+          DIVOOM_BUILD_VERSION="${GITHUB_RUN_NUMBER}" \
+          DIVOOM_SOURCE_REPOSITORY="${GITHUB_REPOSITORY}" \
+          DIVOOM_SOURCE_BRANCH="${GITHUB_REF_NAME}" \
+          DIVOOM_UPDATE_CHANNEL="${GITHUB_REF_NAME}" \
+          DIVOOM_UPDATE_FEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/personal-latest/appcast-${GITHUB_REF_NAME}.xml" \
+          DIVOOM_SPARKLE_PUBLIC_KEY="BWqgCW8t6A6R+tPkslx9LKIuU620nJw3w1L1+JhEJTY=" \
+          DIVOOM_BUILD_COMMIT="${GITHUB_SHA}" \
+          DIVOOM_BUILD_RUN="${GITHUB_RUN_NUMBER}" \
+          bash -x tools/build-divoom-app.sh 2>&1 | tee build-divoom-app.log
       - name: Preserve native build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -85,6 +95,8 @@ jobs:
           cache-dependency-path: requirements-release.txt
       - name: Install DMG layout builder
         run: python -m pip install -r requirements-release.txt
+      - name: Resolve pinned Sparkle release tools
+        run: swift package resolve
       - uses: actions/download-artifact@v5
         with:
           name: Divoom-MiniToo-arm64
@@ -115,28 +127,67 @@ jobs:
             "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg" \
             -output "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg"
           codesign --force --deep --sign - "Divoom MiniToo.app"
+          UPDATE_TAG="personal-update-${GITHUB_RUN_NUMBER}"
+          UPDATE_NAME="Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip"
+          UPDATE_DIR="update-feed"
+          mkdir -p "$UPDATE_DIR"
+          ditto -c -k --sequesterRsrc --keepParent "Divoom MiniToo.app" "$UPDATE_DIR/$UPDATE_NAME"
+          cp RELEASE_NOTES.md "$UPDATE_DIR/${UPDATE_NAME%.zip}.md"
+          printf '%s' "$DIVOOM_SPARKLE_PRIVATE_KEY" | \
+            .build/artifacts/sparkle/Sparkle/bin/generate_appcast \
+              --ed-key-file - \
+              --maximum-versions 1 \
+              --maximum-deltas 0 \
+              --channel personal \
+              --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${UPDATE_TAG}/" \
+              --full-release-notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/personal-latest" \
+              -o "$UPDATE_DIR/appcast-personal.xml" \
+              "$UPDATE_DIR"
           dmgbuild -s tools/dmgbuild-settings.py "Divoom MiniToo" Divoom-MiniToo-macos-universal.dmg
           shasum -a 256 Divoom-MiniToo-macos-universal.dmg > Divoom-MiniToo-macos-universal.dmg.sha256
+        env:
+          DIVOOM_SPARKLE_PRIVATE_KEY: ${{ secrets.DIVOOM_SPARKLE_PRIVATE_KEY }}
       - uses: actions/upload-artifact@v4
         with:
           name: Divoom-MiniToo-macos-universal
           path: |
             Divoom-MiniToo-macos-universal.dmg
             Divoom-MiniToo-macos-universal.dmg.sha256
+            update-feed/Divoom-MiniToo-macos-universal-update-${{ github.run_number }}.zip
+            update-feed/Divoom-MiniToo-macos-universal-update-${{ github.run_number }}.md
+            update-feed/appcast-personal.xml
             ffmpeg-source/ffmpeg-8.1.2.tar.xz
-          retention-days: 30
+          retention-days: 7
       - name: Publish rolling prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          UPDATE_TAG="personal-update-${GITHUB_RUN_NUMBER}"
+          if gh release view "$UPDATE_TAG" >/dev/null 2>&1; then
+            gh release upload "$UPDATE_TAG" "update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --clobber
+          else
+            gh release create "$UPDATE_TAG" "update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --target "$GITHUB_SHA" --title "Personal update ${GITHUB_RUN_NUMBER}" --prerelease --notes "Immutable Sparkle update archive for the Personal channel."
+          fi
           if gh release view personal-latest >/dev/null 2>&1; then
             # The user-facing artifact changed from ZIP to DMG. Remove stale
             # ZIP assets so each rolling release has one unambiguous download.
             for stale_asset in Divoom-MiniToo-macos-universal.zip Divoom-MiniToo-macos-universal.zip.sha256; do
               gh release delete-asset personal-latest "$stale_asset" --yes || true
             done
-            gh release upload personal-latest Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 ffmpeg-source/ffmpeg-8.1.2.tar.xz --clobber
+            gh release view personal-latest --json assets --jq '.assets[].name' | while IFS= read -r asset; do
+              if [[ "$asset" == Divoom-MiniToo-macos-universal-update-*.md && "$asset" != "Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md" ]]; then
+                gh release delete-asset personal-latest "$asset" --yes
+              fi
+            done
+            gh release upload personal-latest Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md update-feed/appcast-personal.xml ffmpeg-source/ffmpeg-8.1.2.tar.xz --clobber
             gh release edit personal-latest --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
           else
-            gh release create personal-latest Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 ffmpeg-source/ffmpeg-8.1.2.tar.xz --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
+            gh release create personal-latest Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md update-feed/appcast-personal.xml ffmpeg-source/ffmpeg-8.1.2.tar.xz --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
           fi
+          count=0
+          gh release list --limit 100 --json tagName --jq '.[] | select(.tagName | startswith("personal-update-")) | .tagName' | while IFS= read -r tag; do
+            count=$((count + 1))
+            if [ "$count" -gt 3 ]; then
+              gh release delete "$tag" --yes --cleanup-tag
+            fi
+          done
