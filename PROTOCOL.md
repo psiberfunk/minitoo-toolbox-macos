@@ -127,8 +127,17 @@ body = 00 <total_payload_len_le32>
 Example from captured payload length `11937` (`0x2ea1`):
 
 ```hex
-01 08 00 8b 00 a1 2e 00 00 ae 01 02
+01 08 00 8b 00 a1 2e 00 00 62 01 02
 ```
+
+(Checksum bytes corrected 2026-07-11: the transcribed example previously
+showed `ae 01` here, which doesn't match the `frame()` algorithm directly
+above when run against this same cmd/body -- recomputed independently
+against that reference algorithm during unit-test work, see
+`Tests/DivoomMiniTooTests/DivoomRawFrameTests.swift`. Not a sign of a code
+bug: `DivoomRawFrame.build`/`DivoomChunkedUpload` implement this exact
+algorithm and are hardware-confirmed working, so this was a doc
+transcription slip, not evidence the device expects a different checksum.)
 
 ### Device request
 

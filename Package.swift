@@ -88,6 +88,10 @@ let package = Package(
                 .linkedFramework("Network"),
             ]
         ),
+        .testTarget(
+            name: "DivoomMiniTooTests",
+            dependencies: ["DivoomMiniToo"]
+        ),
     ],
     // Keep this existing AppKit codebase on the same language-mode behavior
     // as its direct swiftc build while dependencies are moved to SwiftPM.

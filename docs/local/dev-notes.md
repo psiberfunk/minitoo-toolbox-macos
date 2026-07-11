@@ -635,3 +635,41 @@ and no `divoom-helper` anywhere (checked directly with `find`) -- only
 `divoom-daemon`. Bundle size dropped to ~28MB (previously inflated by a
 PyInstaller onefile blob plus a full `.venv` site-packages tree). App
 launches and daemon starts cleanly post-deletion.
+
+## First unit test suite (2026-07-11)
+
+Added `Tests/DivoomMiniTooTests/` (Swift Testing, `import Testing`/`@Test`/
+`#expect`) via a new `.testTarget` in `Package.swift` depending directly on
+`DivoomMiniToo` (`@testable import`) -- no refactor of the pure-logic
+files into a separate library target, since an executableTarget works
+fine as a `@testable import` target already. 28 tests, all passing,
+covering only the pure/deterministic logic layer (no I/O, no Bluetooth, no
+UI): `DivoomRawFrame.build`'s checksum/envelope framing, `DivoomChunkedUpload.packets`'
+announce+chunk layout, `DivoomClockFrame`'s shortcut resolution and JSON
+frame body, `DivoomAlbumEncode.buildPhotoBlob`'s header layout,
+`DivoomMediaEncode.normalizeDims`/`animationPayload`'s validation and
+header self-consistency, and `DivoomZstd.compress`'s magic-byte/determinism
+properties (no round-trip decompress test possible -- only
+`lib/common`/`lib/compress` were vendored from zstd, no `lib/decompress`,
+confirmed via `ls tools/vendor/zstd-1.5.7/lib/`).
+
+SwiftUI views/view-models and anything IO/Bluetooth/hardware-facing
+(`DivoomControlCenter.swift`, `DivoomDaemon.swift`, `DivoomBluetooth.swift`,
+ffmpeg subprocess spawning, battery log-scraping) are explicitly out of
+scope for this pass -- they stay covered by the existing manual/hardware
+testing discipline, not replaced by it. Run via `swift test` from the
+package root; this is separate from `tools/build-divoom-app.sh`, which
+only builds the two app products via `--product` and is unaffected by the
+new test target (verified: still builds clean after this change).
+
+**Caught a real doc bug while sourcing oracle data for these tests**:
+PROTOCOL.md's `0x8b` announce-packet worked example (captured payload
+length 11937) showed checksum bytes `ae 01`, but running the exact
+`frame()` reference algorithm documented immediately above it against the
+same cmd/body produces `62 01` instead -- a transcription slip in the doc,
+not a code bug (the app's own hardware-confirmed sends already use this
+same algorithm). Fixed in PROTOCOL.md with a note explaining the
+correction. Lesson: even this project's own internal docs need the same
+"verify before trusting" treatment as external sources when the value
+matters (here, as unit-test oracle data) -- see
+`feedback_verify_official_claims.md`.
