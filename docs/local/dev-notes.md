@@ -566,3 +566,19 @@ hit that timeout or an ordinary Bluetooth hiccup mid-stream. Worth adding
 duration/chunk-index logging around that timeout the next time this is
 touched, so a future recurrence has real telemetry instead of another
 round of guessing.
+
+**Follow-up observation (2026-07-11), during the native-media-pipeline
+port below:** one single, non-reproducible crash on full-screen MP4 send
+(not still image) during the consolidated hardware test of the native
+Send Media/Photo Album/custom-face ports. Did not reproduce across
+several retries after a device reboot, and did not occur on default
+128×128 video or on any still-image case. Deliberately not chasing this
+with a code change — the exact suspect flagged above (RFCOMM write-timeout
+sensitivity scaling with transfer size/duration) fits a single unreproduced
+event on the single largest payload class this app sends far better than
+a deterministic bug, and `DivoomDaemon.swift`'s RFCOMM-sending code is
+completely unchanged by the native-pipeline port (only *how the packet
+file gets built* changed, not how it gets sent — the built payload was
+independently verified correct via round-trip decompression for this
+exact case). Noting for the record only; revisit if it recurs with an
+actual reproducible pattern.
