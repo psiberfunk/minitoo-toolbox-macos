@@ -103,7 +103,10 @@ upstreamed).
   The UI control is disabled pending a regression diff of the old known-good
   app packet stream versus the current stream for the same input—not a new
   Android capture. Compare payload headers, zstd bytes, length-prefixed packet
-  files, chunk boundaries/delays, and daemon submission. The current video
+  files, chunk boundaries/delays, and daemon submission. **Resolved
+  2026-07-10 — see the Full-screen send row in the feature table above and
+  `docs/local/dev-notes.md` for the fix; full-screen is re-enabled and
+  hardware-confirmed.** The current video
   preview intentionally displays only its first encoded frame; animated
   preview playback is a separate future UI feature.
 - Follow-up hardware check: normal Send Media (including MP4/video) works

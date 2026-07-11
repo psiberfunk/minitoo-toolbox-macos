@@ -98,12 +98,11 @@ before handing off.
 - Send a still image, GIF, and short MP4/video from the menu UI.
 - Confirm the app works without Homebrew `blueutil`, Python, or FFmpeg.
 - Re-test normal 128×128 still and MP4 send after the packet-reuse change.
-- Do **not** test Send Media full-screen mode: it is quarantined after a
-  reported device crash. An earlier app version worked, so investigate by
-  diffing that known-good app's generated packet stream against the current
-  one for identical input; a new Android capture is not the remediation path.
-  Photo Album's 160×128 JPEG path is separate and has been physically
-  confirmed working.
+- Send Media full-screen (160×128) mode: re-enabled and hardware-confirmed
+  2026-07-10 for still image and MP4/video after a preview-build packet-file
+  race was fixed (see `docs/local/dev-notes.md`). Include it in normal
+  Send Media testing going forward. Photo Album's separate 160×128 JPEG
+  path has also been physically confirmed working.
 
 Never call Bluetooth hardware behavior verified from logs alone. Record the
 user's visual/physical result in `docs/local/status.md` before release.

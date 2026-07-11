@@ -315,15 +315,17 @@ Practical rules:
 - Do not activate a custom face after upload unless you intentionally want to switch away from the uploaded animation; doing so can make the animation appear only briefly.
 - Posterizing/noise reduction helps MP4-derived video compress more like phone GIFs. `posterize-bits=4` is fast/small; `posterize-bits=5` has better color but larger transfer.
 - More frames increase both duration and transfer time. A good balance is around `20` frames at `100ms` (`~2s`).
-- **Safety hold (2026-07-10):** a 160x128 still-image send produced no final
-  ACK and was reported by the user to crash the MiniToo, despite earlier
-  full-screen tests succeeding in an earlier version of this app. The menu UI
-  disables full-screen sends pending a **regression diff**, not a new Android
-  capture: reproduce the same input through the last known-good app build and
-  the current build, then compare their generated payload and length-prefixed
-  packet files byte-for-byte (header fields, zstd output, chunk boundaries,
-  delays, and daemon submission). Do not send `--full-screen` payloads during
-  ordinary hardware testing.
+- **Resolved (2026-07-10):** a 160x128 still-image send previously produced
+  no final ACK and crashed the MiniToo; the menu UI disabled full-screen
+  sends pending a regression diff. Root cause: the app-side preview-build
+  packet file was named from the media filename alone with no per-build
+  uniqueness, so a concurrent rebuild (e.g. toggling Full Screen shortly
+  after picking a file) could race on that path and leave a later send
+  pointed at a torn/mismatched packet file. Fixed in
+  `tools/DivoomControlCenter.swift` (per-build output directories, stale
+  completions ignored); full-screen sends are re-enabled and
+  hardware-confirmed working for both still image and MP4/video. Full
+  root-cause writeup in `docs/local/dev-notes.md`.
 
 Balanced recommended profile:
 
