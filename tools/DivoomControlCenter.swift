@@ -69,10 +69,14 @@ final class ControlCenterModel: ObservableObject {
         buildPreview(for: url)
     }
 
-    // Matches send_divoom_image.py's VIDEO_SUFFIXES -- anything not in this
-    // set is a still image. Video/GIF still goes through the Python path in
-    // this phase; only stills are natively ported so far.
-    private static let videoSuffixes: Set<String> = ["mp4", "mov", "m4v", "webm", "mkv", "avi", "gif", "apng"]
+    /// Bundled ffmpeg first (matches DivoomMenuBar.run()'s DIVOOM_FFMPEG
+    /// resolution), falling back to a PATH lookup -- same fallback order
+    /// send_divoom_image.py's build_video_payload used.
+    private func resolveFFmpeg() -> String? {
+        let bundled = app.toolRoot.appendingPathComponent("ffmpeg").path
+        if FileManager.default.isExecutableFile(atPath: bundled) { return bundled }
+        return app.executablePath("ffmpeg")
+    }
 
     func buildPreview(for url: URL) {
         isBusy = true
@@ -84,52 +88,48 @@ final class ControlCenterModel: ObservableObject {
         buildGeneration += 1
         let generation = buildGeneration
         let outDir = app.capturesDir.appendingPathComponent("send-\(generation)")
-        let isVideo = Self.videoSuffixes.contains(url.pathExtension.lowercased())
+        let isVideo = DivoomMediaEncode.videoSuffixes.contains(url.pathExtension.lowercased())
+        let width = wantsFullScreen ? DivoomMediaEncode.panelWidth : 128
+        let height = wantsFullScreen ? DivoomMediaEncode.panelHeight : 128
 
         if isVideo {
+            guard let ffmpegPath = resolveFFmpeg() else {
+                isBusy = false
+                status = "Build failed: ffmpeg not found"
+                return
+            }
+            let fps = 6.0
+            let speed = max(1, Int((1000.0 / fps).rounded()))
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self else { return }
-                var args = [url.path, "--build-only", "--out-dir", outDir.path]
-                if wantsFullScreen { args.append("--full-screen") }
-                let (code, out) = self.app.runPythonTool("send", scriptName: "divoom_send.py", arguments: args)
-                DispatchQueue.main.async {
-                    guard generation == self.buildGeneration else { return }
-                    self.isBusy = false
-                    guard code == 0 else {
-                        self.status = "Build failed: \(String(out.suffix(500)))"
-                        return
+                do {
+                    let (payload, preview, frameCount) = try DivoomMediaEncode.buildVideoPayload(
+                        videoURL: url, ffmpegPath: ffmpegPath, speed: speed, width: width, height: height,
+                        fps: fps, maxFrames: 10
+                    )
+                    let packets = DivoomMediaEncode.buildPackets(payload: payload)
+                    try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+                    let path = DivoomRawFrame.writePacketsFile(packets, name: url.deletingPathExtension().lastPathComponent, in: outDir)
+                    let previewImage = NSImage(cgImage: preview, size: .zero)
+                    DispatchQueue.main.async {
+                        guard generation == self.buildGeneration else { return }
+                        self.isBusy = false
+                        self.packetsPath = path
+                        self.previewImage = previewImage
+                        self.summary = "kind=video frames=\(frameCount) width=\(width) height=\(height) payload_len=\(payload.count)"
+                        self.status = "Preview ready — review it, then send."
                     }
-                    var previewPath: String?
-                    for line in out.split(separator: "\n", omittingEmptySubsequences: true) {
-                        let line = String(line)
-                        if line.hasPrefix("preview=") {
-                            previewPath = String(line.dropFirst("preview=".count))
-                        } else if line.hasPrefix("packets=") {
-                            // "packets=<path, possibly containing spaces> count=<n> bytes=<n>"
-                            // Split from the trailing " count=" marker rather than on every
-                            // space, since paths under ~/Library/Application Support/... do
-                            // contain spaces themselves.
-                            if let countRange = line.range(of: " count=") {
-                                let path = line[line.index(line.startIndex, offsetBy: "packets=".count)..<countRange.lowerBound]
-                                self.packetsPath = URL(fileURLWithPath: String(path))
-                            }
-                        } else if line.hasPrefix("kind=") {
-                            self.summary = line
-                        }
+                } catch {
+                    DispatchQueue.main.async {
+                        guard generation == self.buildGeneration else { return }
+                        self.isBusy = false
+                        self.status = "Build failed: \(error)"
                     }
-                    if let previewPath {
-                        self.previewImage = NSImage(contentsOfFile: previewPath)
-                    }
-                    self.status = self.packetsPath != nil && self.previewImage != nil
-                        ? "Preview ready — review it, then send."
-                        : "Build finished but couldn't parse preview/packets paths."
                 }
             }
             return
         }
 
-        let width = wantsFullScreen ? DivoomMediaEncode.panelWidth : 128
-        let height = wantsFullScreen ? DivoomMediaEncode.panelHeight : 128
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
