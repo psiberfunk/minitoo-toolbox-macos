@@ -52,6 +52,9 @@ macOS Bluetooth Settings can display nearby and saved devices by name.
 
 - macOS
 - Xcode Command Line Tools / Swift compiler
+- A MiniToo running firmware **343008 or later**. Older firmware may be
+  incompatible with the Bluetooth protocol used by this app; update the
+  MiniToo through Divoom's official mobile app before using this project.
 
 For the standalone dev-CLI tools only (`tools/divoom_send.py` and friends —
 not needed to build or run the app itself):
