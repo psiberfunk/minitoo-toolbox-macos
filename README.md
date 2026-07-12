@@ -101,9 +101,14 @@ open "/Applications/Divoom MiniToo.app"
 
 On launch, the app:
 
-1. Disconnects the Divoom macOS audio profile once using native IOBluetooth.
-2. Starts the Swift RFCOMM daemon.
-3. Keeps the daemon available from the menu bar.
+1. Starts the Swift RFCOMM daemon automatically, without deliberately
+   disconnecting the MiniToo Bluetooth link.
+2. Keeps the daemon available from the menu bar.
+
+If a control connection is unavailable because macOS reports RFCOMM as busy,
+the menu's **Debugging Tools** offers a confirmation-gated recovery action to
+disconnect the generic MiniToo Bluetooth link and retry. It can interrupt
+MiniToo audio, so it is not used during normal startup.
 
 ## Running tests
 

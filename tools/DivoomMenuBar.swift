@@ -82,6 +82,59 @@ enum DivoomRawFrame {
         }
         conn.start(queue: .global(qos: .userInitiated))
     }
+
+}
+
+enum DivoomControlState: Equatable {
+    case stopped, checking, live, unavailable
+    var label: String {
+        switch self {
+        case .stopped: return "Not running"
+        case .checking: return "Checking…"
+        case .live: return "Working"
+        case .unavailable: return "Unavailable"
+        }
+    }
+}
+
+/// Compact template images for the menu-bar's three MiniToo health tiers.
+/// A custom partial glyph is necessary because Unicode/SF Symbols provide a
+/// filled diamond and an outline, but not a bottom-half-filled diamond.
+enum DivoomStatusGlyph {
+    case ready, partial, disconnected
+
+    static func image(_ state: DivoomStatusGlyph) -> NSImage {
+        let size = NSSize(width: 14, height: 14)
+        let image = NSImage(size: size, flipped: false) { _ in
+            let diamond = NSBezierPath()
+            diamond.move(to: NSPoint(x: 7, y: 13))
+            diamond.line(to: NSPoint(x: 13, y: 7))
+            diamond.line(to: NSPoint(x: 7, y: 1))
+            diamond.line(to: NSPoint(x: 1, y: 7))
+            diamond.close()
+            switch state {
+            case .ready:
+                NSColor.labelColor.setFill()
+                diamond.fill()
+            case .partial:
+                NSGraphicsContext.saveGraphicsState()
+                diamond.addClip()
+                NSColor.labelColor.setFill()
+                NSBezierPath(rect: NSRect(x: 0, y: 0, width: 14, height: 7)).fill()
+                NSGraphicsContext.restoreGraphicsState()
+                NSColor.labelColor.setStroke()
+                diamond.lineWidth = 1.2
+                diamond.stroke()
+            case .disconnected:
+                NSColor.labelColor.setStroke()
+                diamond.lineWidth = 1.2
+                diamond.stroke()
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 }
 
 final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -91,6 +144,8 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let toolRoot: URL
     let supportDir: URL
     var daemonProcess: Process?
+    var controlState: DivoomControlState = .stopped
+    var lastControlProbe: Date?
     var statusItemViewTimer: Timer?
     var controlCenterWindow: NSWindow?
     var controlCenterModel: ControlCenterModel?
@@ -197,7 +252,10 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !address.isEmpty else {
             setStatus("No MiniToo set up yet")
             openDeviceSetup { [weak self] in
-                self?.startDaemon(disconnectFirst: true)
+                // A newly selected MiniToo should behave exactly like a
+                // remembered one: begin the non-disruptive control-service
+                // startup automatically.  There is no extra user action.
+                self?.startDaemon(disconnectFirst: false)
             }
             if UserDefaults.standard.bool(forKey: "ShowBatteryStatus") {
                 batteryMonitor.start(usePrivateAPI: UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI"))
@@ -212,8 +270,11 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // isOpen()/write state doesn't reliably self-heal).
         if isDaemonRunning() {
             setStatus("Daemon already running")
+            scheduleInitialControlProbe()
         } else {
-            startDaemon(disconnectFirst: true)
+            // Starting the daemon does not disconnect the audio profile.
+            // It opens its own RFCOMM control connection when possible.
+            startDaemon(disconnectFirst: false)
         }
         if UserDefaults.standard.bool(forKey: "ShowBatteryStatus") {
             batteryMonitor.start(usePrivateAPI: UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI"))
@@ -226,39 +287,123 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func refreshTitle() {
-        let running = isDaemonRunning()
-        statusItem.button?.title = running ? "◆ Divoom" : "◇ Divoom"
+        let linked = isAudioConnected()
+        let audio = DivoomAudioRoute.state(exactDeviceName: currentBluetoothName())
+        if controlState == .live && linked && (audio == .available || audio == .selected) {
+            setStatusTitle(glyph: .ready)
+        } else if !DivoomBluetooth.isPoweredOn() || address.isEmpty {
+            // Bluetooth itself is unavailable, rather than merely an
+            // incomplete MiniToo connection, so retain the explicit X.
+            statusItem.button?.image = nil
+            statusItem.button?.title = "× Divoom"
+        } else if !linked {
+            setStatusTitle(glyph: .disconnected)
+        } else {
+            setStatusTitle(glyph: .partial)
+        }
+    }
+
+    func setStatusTitle(glyph: DivoomStatusGlyph) {
+        statusItem.button?.image = DivoomStatusGlyph.image(glyph)
+        statusItem.button?.imagePosition = .imageLeading
+        statusItem.button?.title = " Divoom"
+    }
+
+    /// The MAC is the device identity used for control. The human-readable
+    /// Bluetooth name is only an audio-route correlation hint, so refresh it
+    /// from that identity whenever macOS can provide a current value.
+    func currentBluetoothName() -> String {
+        guard !address.isEmpty else { return deviceName }
+        let liveName = DivoomBluetooth.device(address: address)?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !liveName.isEmpty else { return deviceName }
+        if liveName != deviceName { deviceName = liveName }
+        return liveName
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         refreshTitle()
         rebuildMenu()
+        refreshControlStateIfNeeded()
     }
 
     func rebuildMenu() {
+        let bluetoothPoweredOn = DivoomBluetooth.isPoweredOn()
+        // When Bluetooth itself is off, do not make the user parse a
+        // diagnostic matrix whose remaining rows cannot be meaningful.
+        if !bluetoothPoweredOn {
+            menu.removeAllItems()
+            menu.addItem(disabled("Bluetooth is turned off"))
+            menu.addItem(item("Open Bluetooth Settings…", #selector(openBluetoothSettings)))
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
+            menu.addItem(item("Quit", #selector(quit)))
+            return
+        }
         let daemonRunning = isDaemonRunning()
-        let audioConnected = isAudioConnected()
+        let bluetoothLinked = isAudioConnected()
+        let audioRoute = DivoomAudioRoute.state(exactDeviceName: currentBluetoothName())
+        let isReady = controlState == .live && bluetoothLinked && (audioRoute == .available || audioRoute == .selected)
+        let overall: String
+        if isReady {
+            overall = "Ready"
+        } else if address.isEmpty {
+            overall = "Unavailable"
+        } else if !bluetoothLinked {
+            overall = "No MiniToo connection"
+        } else if controlState == .live && audioRoute == .unavailable {
+            overall = "Partial — audio unavailable"
+        } else if controlState == .live && audioRoute == .unknown {
+            overall = "Partial — audio unknown"
+        } else {
+            overall = "Partial / checking"
+        }
         menu.removeAllItems()
-        menu.addItem(disabled("Daemon: \(daemonRunning ? "Running" : "Stopped")"))
-        menu.addItem(disabled("Audio profile: \(audioConnected ? "Connected" : "Disconnected")"))
+        // A missing MiniToo link makes the individual transport, audio, and
+        // control rows both unavailable and redundant. Keep this state to two
+        // plain facts rather than exposing internal implementation layers.
+        if !bluetoothLinked {
+            menu.addItem(disabled("MiniToo: Not connected"))
+            menu.addItem(disabled(daemonRunning ? "Control service: Waiting for MiniToo" : "Control service: Not running"))
+            if shouldShowLastMessage { menu.addItem(disabled("Last: \(shortStatus(lastMessage))")) }
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(debuggingToolsSubmenu())
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(item("Check for Updates…", #selector(checkForUpdatesMenu), enabled: updateController.isConfigured))
+            menu.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
+            menu.addItem(item("Quit", #selector(quit)))
+            return
+        }
+        // The filled menu-bar diamond already summarizes Ready. In that
+        // state, show only the three independent user-facing layers; daemon
+        // lifecycle and an aggregate "MiniToo: Ready" add no information.
+        if !isReady {
+            menu.addItem(disabled("MiniToo: \(overall)"))
+            menu.addItem(disabled("Daemon: \(daemonRunning ? "Running" : "Stopped")"))
+        }
+        menu.addItem(disabled("Bluetooth: \(bluetoothLinked ? "Connected" : "Disconnected")"))
+        menu.addItem(disabled("Audio on this Mac: \(audioRoute.label)"))
+        menu.addItem(disabled("Device control: \(controlState.label)"))
         if batteryMonitor.isEnabled {
             let chargingSuffix = (batteryMonitor.percent != nil && !batteryMonitor.isOnBattery) ? " (charging)" : ""
             let text = (batteryMonitor.percent.map { "Battery: \($0)%" } ?? "Battery: …") + chargingSuffix
             let iconName = BatteryMonitorModel.batteryIconName(percent: batteryMonitor.percent)
-            menu.addItem(disabled(text, image: NSImage(systemSymbolName: iconName, accessibilityDescription: nil)))
+            menu.addItem(disabledBattery(text, image: NSImage(systemSymbolName: iconName, accessibilityDescription: nil)))
         }
-        menu.addItem(disabled("Last: \(shortStatus(lastMessage))"))
+        if shouldShowLastMessage { menu.addItem(disabled("Last: \(shortStatus(lastMessage))")) }
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
-        menu.addItem(brightnessSliderItem(enabled: daemonRunning))
+        if controlState == .live {
+            menu.addItem(brightnessSliderItem(enabled: true))
+        }
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(item("Start Daemon (only if audio disconnected)", #selector(startDaemonMenu), enabled: !daemonRunning && !audioConnected))
-        menu.addItem(item("Disconnect Audio + Start Daemon", #selector(disconnectAndStartMenu), enabled: !daemonRunning))
-        menu.addItem(item("Stop Daemon", #selector(stopDaemonMenu), enabled: daemonRunning))
-        menu.addItem(item("Restart Daemon", #selector(restartDaemonMenu), enabled: true))
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(item("Disconnect Divoom Audio", #selector(disconnectAudioMenu), enabled: audioConnected))
-        menu.addItem(item("Reconnect Divoom Audio", #selector(reconnectAudioMenu), enabled: !audioConnected))
+        if daemonRunning && controlState == .live {
+            menu.addItem(item("Stop Control Service", #selector(stopDaemonMenu)))
+        } else if daemonRunning {
+            menu.addItem(item("Retry Control Service", #selector(restartDaemonMenu)))
+            menu.addItem(item("Stop Control Service", #selector(stopDaemonMenu)))
+        }
         menu.addItem(NSMenuItem.separator())
         menu.addItem(debuggingToolsSubmenu())
         menu.addItem(NSMenuItem.separator())
@@ -274,6 +419,12 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         submenu.addItem(item("Open Protocol Notes", #selector(openProtocol)))
         submenu.addItem(item("Open Menu Log", #selector(openMenuLog)))
         submenu.addItem(item("Open Daemon Log", #selector(openDaemonLog)))
+        // Debugging Tools is deliberately stable rather than context-pruned:
+        // it is the user's escape hatch when our current status inference is
+        // wrong or incomplete. Destructive recovery still asks for consent.
+        submenu.addItem(NSMenuItem.separator())
+        submenu.addItem(item("Restart Control Service", #selector(restartDaemonMenu)))
+        submenu.addItem(item("Disconnect MiniToo Bluetooth + Retry Control Service…", #selector(recoverBluetoothAndRestartControlService)))
         parent.submenu = submenu
         return parent
     }
@@ -292,10 +443,43 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return i
     }
 
+    /// Keep NSMenuItem's native left alignment. The battery image is an inline
+    /// attachment after the title, not a leading menu image and not a custom
+    /// view with hand-tuned insets.
+    func disabledBattery(_ title: String, image: NSImage?) -> NSMenuItem {
+        let item = disabled(title)
+        let text = NSMutableAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.menuFont(ofSize: 0),
+                .foregroundColor: NSColor.disabledControlTextColor,
+            ]
+        )
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        text.append(NSAttributedString(string: " "))
+        text.append(NSAttributedString(attachment: attachment))
+        item.attributedTitle = text
+        return item
+    }
+
     func shortStatus(_ message: String, limit: Int = 72) -> String {
         let singleLine = message.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
         if singleLine.count <= limit { return singleLine }
         return String(singleLine.prefix(limit - 1)) + "…"
+    }
+
+    /// Routine lifecycle/update configuration text does not earn a permanent
+    /// status row. Action results and errors still remain visible.
+    var shouldShowLastMessage: Bool {
+        let normalMessages = [
+            "Ready",
+            "Daemon already running",
+            "Daemon started",
+            "Starting control service…",
+            "Updates are not configured in this build",
+        ]
+        return !normalMessages.contains(lastMessage)
     }
 
     func executablePath(_ name: String) -> String? {
@@ -349,7 +533,61 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// A recent valid WhiteNoise/Get reply is an end-to-end RFCOMM proof. The
+    /// query is capture-derived and read-only; it runs at most once per 15s
+    /// while the menu is opened, never as a background heartbeat.
+    func refreshControlStateIfNeeded() {
+        guard isDaemonRunning() else { controlState = .stopped; return }
+        guard isAudioConnected() else { controlState = .unavailable; return }
+        if let lastControlProbe, Date().timeIntervalSince(lastControlProbe) < 15 { return }
+        guard controlState != .checking else { return }
+        controlState = .checking
+        let job: [String: Any] = [
+            "Command": "WhiteNoise/Get", "DeviceId": 600111083,
+            "DevicePassword": 1777733348, "Token": 1777741943, "UserId": 404779143,
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: job) else { controlState = .unavailable; return }
+        let packet = DivoomRawFrame.build(cmd: 0x01, body: body)
+        let path = DivoomRawFrame.writePacketsFile(packet, name: "control-health", in: capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(daemonPort) ?? 40583, waitForReply: 1.5) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.lastControlProbe = Date()
+                guard let data = result.data(using: .utf8),
+                      let outer = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let reply = outer["reply"] as? String,
+                      let replyData = reply.data(using: .utf8),
+                      (try? JSONSerialization.jsonObject(with: replyData)) != nil
+                else {
+                    self.controlState = .unavailable
+                    self.rebuildMenu()
+                    self.refreshTitle()
+                    return
+                }
+                self.controlState = .live
+                self.rebuildMenu()
+                self.refreshTitle()
+            }
+        }
+    }
+
+    /// Establish the initial menu-bar health state without making the user
+    /// open its menu. This is one existing, read-only WhiteNoise/Get probe
+    /// after startup/reuse—not a continuous heartbeat or a new opcode.
+    func scheduleInitialControlProbe() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            self.lastControlProbe = nil
+            self.refreshControlStateIfNeeded()
+        }
+    }
+
+
     func startDaemon(disconnectFirst: Bool) {
+        DispatchQueue.main.async {
+            self.controlState = .checking
+            self.setStatus("Starting control service…")
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             if disconnectFirst {
                 _ = DivoomBluetooth.disconnect(address: self.address)
@@ -383,16 +621,19 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Thread.sleep(forTimeInterval: 2.0)
                 if self.isDaemonRunning() {
                     self.setStatus("Daemon started")
+                    self.scheduleInitialControlProbe()
                 } else {
+                    self.controlState = .unavailable
                     let logText = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
                     try? FileManager.default.removeItem(at: self.daemonPidFile)
                     if logText.contains("0x-1ffffd44") {
-                        self.setStatus("Start failed: audio/RFCOMM busy; use Disconnect Audio + Start")
+                        self.setStatus("Control service could not start: Bluetooth/RFCOMM is busy; see daemon log")
                     } else {
                         self.setStatus("Daemon failed; see daemon log")
                     }
                 }
             } catch {
+                self.controlState = .unavailable
                 self.setStatus("Start failed: \(error)")
             }
         }
@@ -408,25 +649,25 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc func startDaemonMenu() { startDaemon(disconnectFirst: false) }
-    @objc func disconnectAndStartMenu() { startDaemon(disconnectFirst: true) }
     @objc func stopDaemonMenu() { stopDaemon() }
     @objc func restartDaemonMenu() {
         stopDaemon()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { self.startDaemon(disconnectFirst: true) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { self.startDaemon(disconnectFirst: false) }
     }
 
-    @objc func disconnectAudioMenu() {
-        DispatchQueue.global().async {
-            let result = DivoomBluetooth.disconnect(address: self.address)
-            self.setStatus(result == kIOReturnSuccess ? "Audio disconnected" : "Could not disconnect audio")
-        }
-    }
-
-    @objc func reconnectAudioMenu() {
-        DispatchQueue.global().async {
-            let result = DivoomBluetooth.connect(address: self.address)
-            self.setStatus(result == kIOReturnSuccess ? "Audio reconnect requested" : "Could not reconnect audio")
+    /// Last-resort recovery for the known RFCOMM-busy failure.  This is a
+    /// generic Bluetooth link teardown, not a precise audio-profile command,
+    /// so it must remain user-confirmed and never run as normal startup.
+    @objc func recoverBluetoothAndRestartControlService() {
+        let alert = NSAlert()
+        alert.messageText = "Disconnect MiniToo Bluetooth and retry?"
+        alert.informativeText = "This can interrupt MiniToo audio on this Mac and disconnect its current Bluetooth link. Use it only when the control service is unavailable or busy."
+        alert.addButton(withTitle: "Disconnect and Retry")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        stopDaemon()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+            self.startDaemon(disconnectFirst: true)
         }
     }
 
@@ -547,6 +788,13 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func openDaemonLog() {
         NSWorkspace.shared.open(daemonLog)
+    }
+
+    @objc func openBluetoothSettings() {
+        // macOS's public System Settings URL route. It avoids guessing at a
+        // preferences-pane filesystem path and lets the OS handle its own UI.
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc func quit() {

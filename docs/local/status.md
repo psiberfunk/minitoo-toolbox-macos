@@ -150,6 +150,75 @@ any existing healthy daemon but do not automatically call the generic
 `closeConnection()` "disconnect first" path merely to establish status: taking
 over a local connection must remain a named, user-confirmed recovery action.
 
+**Implementation in progress (2026-07-12, uncommitted):** Control Center's
+unfinished tiles are now badged/disabled. The control service resumes/starts
+automatically on launch without deliberately disconnecting Bluetooth. The menu
+distinguishes a generic Bluetooth link, conservative local CoreAudio route
+state (exact saved-name match only; otherwise Unknown), and an end-to-end
+`WhiteNoise/Get` control probe. The status-bar glyph is monochrome: `×` only
+when Bluetooth is unavailable, `○` when Bluetooth is on but there is no
+MiniToo connection, `◐` only for an actual incomplete MiniToo connection, and
+`◆` when all measured components are ready. Bluetooth-off intentionally
+collapses to a simple instruction rather than a diagnostic matrix. The old
+generic `closeConnection()` recovery remains only as a confirmation-gated
+Debugging Tools action, because it can interrupt audio and is not a targeted
+audio-profile operation. Debugging Tools intentionally remains stable rather
+than context-pruned: its actions are the escape hatch if status inference is
+wrong or incomplete. Hardware validation is still required before calling
+CoreAudio's name correlation reliable or finalizing the display/action policy.
+When Bluetooth is on but MiniToo itself is not linked, the menu intentionally
+shows only `MiniToo: Not connected` and one plain control-service waiting/not-
+running line; it hides redundant transport/audio/control rows and any stale
+battery value. Battery is displayed as a standard left-aligned percentage
+row; do not use a custom menu view to force an icon position. A saved MiniToo
+audio name absent from CoreAudio is shown as **Unavailable** (and makes
+overall state `Partial — audio unavailable`); only a missing saved name or
+ambiguous CoreAudio match is **Unknown**.
+
+**CoreAudio follow-up (2026-07-12, uncommitted):** Hardware/UI validation
+showed macOS correctly listed and selected `Divoom MiniToo-Audio` while the
+app still showed Unknown. The first CoreAudio implementation read
+`kAudioObjectPropertyName` with `takeUnretainedValue()`, but Apple's SDK
+documents the returned `CFString` as caller-owned. It now uses the correct
+`Unmanaged<CFString>?` storage and `takeRetainedValue()` ownership transfer.
+The diagnostic then showed two live CoreAudio objects with that same exact
+Bluetooth name—one was the default output—so the initial “exactly one match”
+rule also incorrectly returned Unknown. The final rule treats same-named live
+objects as one route: default output means Selected; otherwise any live match
+means Available. The user's physical test confirmed macOS audio playback on
+MiniToo while selected; re-test the app display after rebuilding.
+
+**Name identity rule (2026-07-12, uncommitted):** The discovered Bluetooth MAC
+is the stable identity used to open RFCOMM and inspect the generic link; it is
+never replaced by a display name. The display name is only the CoreAudio
+correlation hint. On status refresh the app reads the current IOBluetooth name
+for that saved MAC and updates its cached scan name when it has changed, so a
+normal Bluetooth rename tracks automatically rather than requiring a rescan.
+The menu-bar glyphs use an open diamond for no MiniToo connection, a
+bottom-half-filled diamond for partial connection, and a filled diamond for
+Ready; Bluetooth-off remains an explicit × state.
+
+**Ready-state density (2026-07-12, uncommitted):** In Ready, the filled
+menu-bar diamond already supplies the aggregate result. Do not also show
+`MiniToo: Ready` or `Daemon: Running`: the former repeats the aggregate and
+the latter is implied by a successful `Control: Live` reply. Keep the three
+independent user-facing rows—Bluetooth link, local audio route, and control
+health—plus battery. Labels are user-facing: `Bluetooth`, `Audio on this
+Mac`, and `Device control: Working`; they avoid making the daemon an ordinary
+user concern. Battery is a standard left-aligned `NSMenuItem` whose icon is an
+inline title attachment after the percentage; do not use a custom menu view,
+leading menu image, or hand-tuned position. Hide routine `Last:` messages such
+as updater-not-configured and daemon-started; retain actual action results/
+errors.
+
+**Initial control status (2026-07-12, uncommitted):** The first implementation
+only ran the existing read-only `WhiteNoise/Get` health probe when the user
+opened the menu, so the status bar could remain Partial until clicked even
+though the daemon and audio route were already ready. Schedule exactly one
+probe after daemon launch or reuse so the status glyph updates independently.
+Keep the menu-open TTL for later refreshes; this is not a continuous heartbeat
+or a speculative passive signal.
+
 ### Intended menu states
 
 1. **No configured/paired MiniToo:** show `Set Up MiniToo…`; no daemon or
@@ -158,10 +227,12 @@ over a local connection must remain a named, user-confirmed recovery action.
    Settings…`; no start/disconnect/reconnect actions.
 3. **Configured but missing/unpaired:** show `Set Up MiniToo…` / rescan;
    no daemon actions.
-4. **Control daemon stopped:** show one `Start Control Service` action. If a
-   separately verified *local* audio route is active, an explicit,
-   confirmation-gated "take over local Bluetooth connection" recovery action
-   may be offered; it must say that it can interrupt this Mac's playback.
+4. **Control daemon stopped:** automatically start the control service without
+   disconnecting Bluetooth; show its transition status, not an extra routine
+   user action. Debugging Tools always exposes the explicit,
+   confirmation-gated `Disconnect MiniToo Bluetooth + Retry Control Service…`
+   recovery action; it must say it can interrupt this Mac's playback and
+   generic Bluetooth connection.
 5. **Daemon starting/stopping:** show status only, with no competing action.
 6. **Control healthy:** show `Stop Control Service`; put restart/retry in a
    Troubleshooting submenu rather than normal operation.

@@ -165,5 +165,5 @@ Install:
 Open:
   open "$APP"
 
-On launch, the app disconnects the Divoom audio profile once, starts the Swift daemon, and keeps RFCOMM open.
+On launch, the app automatically starts the Swift daemon without deliberately disconnecting Bluetooth, then keeps RFCOMM open when available.
 EOF
