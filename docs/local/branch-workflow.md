@@ -30,6 +30,23 @@ future session notices CI "didn't run" after a docs-only push, this is
 expected behavior, not a broken workflow — check `paths-ignore` before
 assuming something's wrong.
 
+## Git transport vs. GitHub API authentication
+
+The local `fork` remote is the authority for normal source pushes. Its Git
+credential (currently HTTPS through macOS Keychain) is independent from the
+GitHub CLI's API token and from Codex's GitHub MCP connection. In particular,
+an expired `gh auth status` result is **not** by itself a reason to block a
+normal, explicitly requested `git push fork personal`.
+
+Before declaring a push blocked, make a read-only transport check such as
+`git ls-remote --heads fork personal`; if it succeeds, stage only the intended
+paths, commit, and push normally. Use the GitHub MCP connector for repository,
+release, and Actions inspection when available. Re-authenticate `gh` only
+when a task genuinely requires that local CLI's API access and MCP cannot do
+the job. Do not use the MCP contents API to synthesize a replacement remote
+commit for local work: that would leave the checkout out of sync with its
+branch history.
+
 ## PRs to upstream are opt-in, not a default sync step
 
 As of 2026-07-10, opening or updating a PR against
