@@ -33,7 +33,10 @@ one working.
    UX and explicitly state it uses the MiniToo's own onboard microphone (never
    the Mac's). The control protocol is still APK-decoded only; capture the
    official app's traffic and obtain direct hardware confirmation before
-   enabling any device command.
+   enabling any device command. Until then, this and every other prototype
+   tile is visibly dimmed, badged **Coming Soon**, and non-clickable from the
+   Functions grid; `ControlCenterFunction.isImplemented` is the single
+   removal switch when each capture-derived implementation lands.
 2. **Scoreboard** — Swift/Control Center icon and disabled UX prototype added
    2026-07-11 (two three-digit scores, reset, on/off). Still APK-decoded only;
    no device command is enabled pending capture and hardware validation.
@@ -50,12 +53,132 @@ one working.
    2026-07-11 (built-in game launcher). Still APK-decoded only; no device
    command is enabled pending capture and hardware validation.
 
+### Next execution step: capture batch, then implementation
+
+Do **not** enable any of the six prototype panes from APK/static research
+alone. The next work starts with Android Bluetooth HCI-snoop captures of the
+official app, then ports only the observed traffic into the existing Control
+Center shells, followed by direct user hardware confirmation.
+
+1. **Tool-view capture session:** Noise Meter, Scoreboard, Stopwatch, and
+   Countdown. For each, capture opening the feature and one meaningful action
+   (score change/reset; start/stop/reset; duration/start/stop as applicable),
+   while recording the corresponding official-app UI state. Treat these as one
+   batch because existing research suggests a shared `0x72` view-entry family,
+   but do not assume the IDs or follow-up state commands are shared. Exit tool
+   views with the MiniToo's physical button; there is no confirmed software
+   return-to-clock command. Avoid Stopwatch/Countdown boundary alarms at night.
+2. **Alarm capture/test session:** capture list/read, add/edit, enable/disable,
+   and delete flows. Only after decoding them, perform a deliberate user-owned
+   near-future alarm test and directly confirm it fired as expected.
+3. **Games capture session:** capture launching each available official-app
+   game and any exit/return behavior. Do not infer game IDs or send the
+   APK-decoded opcodes until this is observed.
+4. **Implement and verify in order:** Noise Meter, Scoreboard,
+   Stopwatch/Countdown, Alarms, Games. Keep each feature disabled until its
+   own capture-derived packet builder and user hardware test are complete.
+
 Sleep-control commands remain a separate research question, not part of this
 batch. The project's existing warning is based on external reverse-engineering
 and generic Divoom mapping, not a bricking event personally observed by this
-project's user; do not weaken the send guard or transmit any of those opcodes
+project’s user; do not weaken the send guard or transmit any of those opcodes
 without an explicit capture-first test plan and a hardware power-cycle
 recovery path.
+
+## Planned connectivity-status/menu redesign (capture work may proceed first)
+
+The MiniToo has distinct Bluetooth uses: the app protocol is an RFCOMM/SPP
+control channel, while playback uses an A2DP audio profile. The user's
+observed two-computer contention is consistent with those profile/session
+layers being independently usable or unavailable. The current menu incorrectly
+calls `IOBluetoothDevice.isConnected()` an "Audio profile" state; it is only a
+generic Bluetooth link indication and cannot prove that either local A2DP or
+end-to-end RFCOMM control works.
+
+Before changing the menu, define one asynchronous `ConnectivitySnapshot` from
+these separate signals:
+
+| Signal | Meaning / source | Do not infer |
+|---|---|---|
+| Setup/pairing | Saved address plus a matching macOS paired-device record | That the device is in range or has accepted a connection |
+| Bluetooth controller | Public IOBluetooth power state | Any MiniToo connection or profile state |
+| Generic MiniToo link | `IOBluetoothDevice.isConnected()` | A2DP audio, RFCOMM health, or which host owns a profile |
+| Local audio route | Future measured CoreAudio route check: unavailable / available / selected / unknown | Any other computer's audio connection or control ownership |
+| Daemon lifecycle | stopped / starting / stopping / process present | That the daemon can talk to the MiniToo |
+| Control health | A rate-limited, known-safe `WhiteNoise/Get` request through the local daemon that receives a parseable MiniToo reply | That audio is connected, or why a negative probe failed |
+
+`WhiteNoise/Get` is already capture-derived and hardware-confirmed as a read
+of device state; it is the candidate end-to-end health probe, not a brightness
+write whose visual effect requires a human to observe. A failed probe must be
+reported neutrally as **Control unavailable** (with possible causes such as
+another device/session, range, or stale RFCOMM), never falsely as "audio is
+connected." This Mac cannot enumerate another host's Bluetooth profile use.
+
+### Planned health indicator
+
+Use both a glanceable overall indicator and explicit component rows. A single
+red/yellow/green light alone is insufficient because the useful partial states
+are exactly the point of this redesign.
+
+- **Menu-bar glyph:** retain a monochrome state shape (macOS menu-bar template
+  icons should not be relied on for color): ready / partial / unavailable /
+  checking. Its accessibility label states the same overall state.
+- **Menu header health card:** a small custom AppKit menu view with colored
+  dots and text, rather than treating disabled menu items as status controls:
+  `Bluetooth link`, `Audio on this Mac`, and `Control`. The local-audio row
+  distinguishes *available* from *selected*; available-but-not-selected is a
+  good outcome for a user who merely wants playback to remain possible.
+- **Overall green — Ready:** configured and paired, Bluetooth link up, local
+  audio route is measured available (selection is not required), and a recent
+  control probe has received a valid reply.
+- **Overall yellow — Partial / needs attention:** any useful but incomplete
+  combination, such as audio available but control unavailable, control live
+  while audio is unavailable/unknown, a daemon transition, or a stale probe.
+  The component rows state which condition is missing.
+- **Overall red — Unavailable:** Bluetooth off, no configured/paired device,
+  or neither local audio availability nor live control can be established.
+- **Overall gray — Checking:** no completed snapshot yet; never present stale
+  "connected" data as current while probing.
+
+Refresh the cheap local signals on menu open and after each lifecycle action.
+Probe control only after daemon startup/retry and when a cached successful
+probe is older than a modest TTL while the menu is open; do not turn the menu
+into a continuous device poller. The first implementation must validate that
+CoreAudio can reliably correlate the configured MiniToo with a local output
+route; until then show Audio as **Unknown**, not guessed. On launch, preserve
+any existing healthy daemon but do not automatically call the generic
+`closeConnection()` "disconnect first" path merely to establish status: taking
+over a local connection must remain a named, user-confirmed recovery action.
+
+### Intended menu states
+
+1. **No configured/paired MiniToo:** show `Set Up MiniToo…`; no daemon or
+   connection actions.
+2. **Bluetooth off:** show a Bluetooth-off status and `Open Bluetooth
+   Settings…`; no start/disconnect/reconnect actions.
+3. **Configured but missing/unpaired:** show `Set Up MiniToo…` / rescan;
+   no daemon actions.
+4. **Control daemon stopped:** show one `Start Control Service` action. If a
+   separately verified *local* audio route is active, an explicit,
+   confirmation-gated "take over local Bluetooth connection" recovery action
+   may be offered; it must say that it can interrupt this Mac's playback.
+5. **Daemon starting/stopping:** show status only, with no competing action.
+6. **Control healthy:** show `Stop Control Service`; put restart/retry in a
+   Troubleshooting submenu rather than normal operation.
+7. **Daemon unhealthy/control unavailable:** show `Retry Control Service`,
+   `Stop Control Service`, and troubleshooting/log access. Explain that another
+   device may be using MiniToo, but do not claim that as fact.
+
+The standalone `Disconnect Divoom Audio` / `Reconnect Divoom Audio` items are
+to be removed or replaced after local audio-route detection is validated:
+`IOBluetoothDevice.closeConnection()`/`openConnection()` operate on the
+generic link and are not truthful audio-profile controls. The top status label
+will become **MiniToo Bluetooth link**; local audio and control health will be
+shown separately only when measured. Implement with a pure state reducer,
+asynchronous refresh (never mutate connections while merely opening the menu),
+serialized start/stop/retry actions with internal precondition rechecks, unit
+tests for every state/action combination, and manual tests including a second
+computer contending for audio/control.
 
 ## Long-term release hardening
 

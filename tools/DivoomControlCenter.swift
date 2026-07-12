@@ -598,6 +598,19 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Single switchboard for the Control Center's temporary feature tiles.
+    /// When a capture-derived implementation lands, move that one case to the
+    /// implemented group below; the "Coming Soon" badge and disabled state
+    /// disappear together without touching the grid layout.
+    var isImplemented: Bool {
+        switch self {
+        case .sendMedia, .whiteNoise, .customFaces, .photoAlbum, .atmosphere, .deviceSettings:
+            return true
+        case .noiseMeter, .scoreboard, .stopwatch, .countdown, .alarms, .games:
+            return false
+        }
+    }
+
     var title: String {
         switch self {
         case .sendMedia: return "Send Media"
@@ -1679,10 +1692,20 @@ struct ControlCenterView: View {
             ForEach(ControlCenterFunction.allCases) { function in
                 Button(action: { selection = function }) {
                     VStack(spacing: 8) {
-                        Image(systemName: function.icon)
-                            .font(.system(size: 32))
-                            .frame(width: 64, height: 64)
-                            .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.12)))
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: function.icon)
+                                .font(.system(size: 32))
+                                .frame(width: 64, height: 64)
+                                .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.12)))
+                            if !function.isImplemented {
+                                Text("Coming Soon")
+                                    .font(.system(size: 8, weight: .semibold))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 3)
+                                    .background(.regularMaterial, in: Capsule())
+                                    .offset(x: 10, y: -6)
+                            }
+                        }
                         Text(function.title)
                             .font(.callout)
                             .multilineTextAlignment(.center)
@@ -1691,6 +1714,9 @@ struct ControlCenterView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .disabled(!function.isImplemented)
+                .opacity(function.isImplemented ? 1 : 0.52)
+                .accessibilityLabel(function.isImplemented ? function.title : "\(function.title), coming soon")
             }
         }
         .padding(24)
