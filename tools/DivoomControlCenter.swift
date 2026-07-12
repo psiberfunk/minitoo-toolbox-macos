@@ -584,6 +584,12 @@ struct DeviceControlsBar: View {
 /// tap one to drill into its controls, then back out to pick another.
 enum ControlCenterFunction: String, CaseIterable, Identifiable {
     case sendMedia
+    case noiseMeter
+    case scoreboard
+    case stopwatch
+    case countdown
+    case alarms
+    case games
     case whiteNoise
     case customFaces
     case photoAlbum
@@ -595,6 +601,12 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .sendMedia: return "Send Media"
+        case .noiseMeter: return "Noise Meter"
+        case .scoreboard: return "Scoreboard"
+        case .stopwatch: return "Stopwatch"
+        case .countdown: return "Countdown"
+        case .alarms: return "Alarms"
+        case .games: return "Games"
         case .whiteNoise: return "White Noise"
         case .customFaces: return "Custom Faces"
         case .photoAlbum: return "Photo Album"
@@ -606,12 +618,224 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .sendMedia: return "photo"
+        case .noiseMeter: return "waveform.badge.mic"
+        case .scoreboard: return "rectangle.3.group"
+        case .stopwatch: return "stopwatch"
+        case .countdown: return "timer"
+        case .alarms: return "alarm"
+        case .games: return "gamecontroller"
         case .whiteNoise: return "waveform"
         case .customFaces: return "square.stack.3d.up"
         case .photoAlbum: return "photo.stack"
         case .atmosphere: return "square.grid.3x3.fill"
         case .deviceSettings: return "gearshape"
         }
+    }
+}
+
+/// The UI landing place for the MiniToo's onboard noise-meter feature.
+///
+/// This is intentionally presentation-only for now: the command sequence
+/// currently exists only as unverified APK-derived research.  Keeping the
+/// controls visibly unavailable prevents the UI from promising a Mac-mic
+/// meter or sending an un-captured command to the device.  Once an Android
+/// HCI capture establishes the protocol, this view becomes the home for its
+/// on/off and level display without needing another navigation redesign.
+struct NoiseMeterView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Noise Meter", systemImage: "waveform.badge.mic")
+                .font(.headline)
+
+            HStack(spacing: 14) {
+                Image(systemName: "speaker.wave.3")
+                    .font(.system(size: 34))
+                    .foregroundColor(.secondary)
+                    .frame(width: 52, height: 52)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.gray.opacity(0.12)))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Uses the MiniToo's onboard microphone")
+                        .font(.callout)
+                    Text("No Mac microphone access is needed.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 8) {
+                Image(systemName: "wrench.and.screwdriver")
+                    .foregroundColor(.secondary)
+                Text("This feature isn’t implemented yet.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(width: 325, alignment: .leading)
+        .padding(20)
+    }
+}
+
+/// Reusable non-transmitting footer for features whose packet format has not
+/// yet been established by an official-app HCI capture.  Showing the intended
+/// controls, but leaving them disabled, lets the Control Center layout settle
+/// without creating a misleading "it sent" path to unvalidated hardware.
+struct PendingProtocolNotice: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wrench.and.screwdriver")
+                .foregroundColor(.secondary)
+            Text("This feature isn’t implemented yet.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct ScoreboardView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Scoreboard", systemImage: "rectangle.3.group")
+                .font(.headline)
+            Text("Two three-digit scores, with reset and on/off controls.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 16) {
+                scoreColumn(label: "Home")
+                scoreColumn(label: "Away")
+            }
+            HStack {
+                Toggle("Show on MiniToo", isOn: .constant(false)).disabled(true)
+                Spacer()
+                Button("Reset Scores") {}.disabled(true)
+            }
+            PendingProtocolNotice()
+        }
+        .frame(width: 325, alignment: .leading)
+        .padding(20)
+    }
+
+    private func scoreColumn(label: String) -> some View {
+        VStack(spacing: 6) {
+            Text(label).font(.caption).foregroundColor(.secondary)
+            HStack(spacing: 6) {
+                Button(action: {}) { Image(systemName: "minus") }.disabled(true)
+                Text("000").font(.system(.title2, design: .monospaced)).frame(minWidth: 48)
+                Button(action: {}) { Image(systemName: "plus") }.disabled(true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct StopwatchView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Stopwatch", systemImage: "stopwatch")
+                .font(.headline)
+            Text("Start, stop, and reset a device-side elapsed timer.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text("00:00.0")
+                .font(.system(size: 38, weight: .medium, design: .monospaced))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.gray.opacity(0.12)))
+            HStack {
+                Button("Start") {}.disabled(true)
+                Button("Reset") {}.disabled(true)
+                Spacer()
+            }
+            PendingProtocolNotice()
+        }
+        .frame(width: 325, alignment: .leading)
+        .padding(20)
+    }
+}
+
+struct CountdownView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Countdown", systemImage: "timer")
+                .font(.headline)
+            Text("Set a duration, then start or stop the device-side timer.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                Picker("Minutes", selection: .constant(5)) {
+                    Text("5 min").tag(5)
+                }
+                .labelsHidden()
+                .frame(width: 100)
+                .disabled(true)
+                Button("Start") {}.disabled(true)
+                Button("Reset") {}.disabled(true)
+            }
+            PendingProtocolNotice()
+        }
+        .frame(width: 325, alignment: .leading)
+        .padding(20)
+    }
+}
+
+struct AlarmsView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Alarms", systemImage: "alarm")
+                .font(.headline)
+            Text("Create and manage alarms stored on the MiniToo.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack {
+                Image(systemName: "alarm")
+                    .foregroundColor(.secondary)
+                Text("No alarms yet")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button("Add Alarm…") {}.disabled(true)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.gray.opacity(0.12)))
+            PendingProtocolNotice()
+        }
+        .frame(width: 325, alignment: .leading)
+        .padding(20)
+    }
+}
+
+struct GamesView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Games", systemImage: "gamecontroller")
+                .font(.headline)
+            Text("Launch one of the MiniToo's built-in games.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack(spacing: 10) {
+                gameTile(icon: "gamecontroller", title: "Game 1")
+                gameTile(icon: "puzzlepiece", title: "Game 2")
+                gameTile(icon: "circle.grid.cross", title: "Game 3")
+            }
+            PendingProtocolNotice()
+        }
+        .frame(width: 325, alignment: .leading)
+        .padding(20)
+    }
+
+    private func gameTile(icon: String, title: String) -> some View {
+        Button(action: {}) {
+            VStack(spacing: 5) {
+                Image(systemName: icon).font(.title3)
+                Text(title).font(.caption)
+            }
+            .frame(maxWidth: .infinity, minHeight: 58)
+        }
+        .disabled(true)
     }
 }
 
@@ -1450,7 +1674,8 @@ struct ControlCenterView: View {
     }
 
     private var functionGrid: some View {
-        HStack(spacing: 20) {
+        let columns = Array(repeating: GridItem(.fixed(76), spacing: 14), count: 4)
+        return LazyVGrid(columns: columns, alignment: .center, spacing: 18) {
             ForEach(ControlCenterFunction.allCases) { function in
                 Button(action: { selection = function }) {
                     VStack(spacing: 8) {
@@ -1458,7 +1683,11 @@ struct ControlCenterView: View {
                             .font(.system(size: 32))
                             .frame(width: 64, height: 64)
                             .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.12)))
-                        Text(function.title).font(.callout)
+                        Text(function.title)
+                            .font(.callout)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .frame(width: 76, height: 34)
                     }
                 }
                 .buttonStyle(.plain)
@@ -1471,6 +1700,12 @@ struct ControlCenterView: View {
     private func detailView(for function: ControlCenterFunction) -> some View {
         switch function {
         case .sendMedia: SendMediaView(model: sendModel)
+        case .noiseMeter: NoiseMeterView()
+        case .scoreboard: ScoreboardView()
+        case .stopwatch: StopwatchView()
+        case .countdown: CountdownView()
+        case .alarms: AlarmsView()
+        case .games: GamesView()
         case .whiteNoise: WhiteNoiseView(model: whiteNoiseModel)
         case .customFaces: CustomFacesView(model: customFacesModel)
         case .photoAlbum: PhotoAlbumView(model: photoAlbumModel)

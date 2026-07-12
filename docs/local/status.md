@@ -28,13 +28,27 @@ this order. They are APK-decoded only at this point: capture the official
 app's traffic and obtain direct user hardware confirmation before marking any
 one working.
 
-1. **Noise Meter** — first item. User reports the MiniToo's own onboard
-   microphone supplies the level, so the macOS app should only control/display
-   the device feature; it must not add a Mac microphone dependency. Add a
-   Control Center icon when implementing.
-2. **Scoreboard** — two three-digit scores plus reset/on-off.
-3. **Countdown Timer** — duration plus start/stop.
-4. **Stopwatch** — start/stop/reset.
+1. **Noise Meter** — Swift/Control Center navigation shell added 2026-07-11:
+   an icon and explanatory, non-operational detail view establish the intended
+   UX and explicitly state it uses the MiniToo's own onboard microphone (never
+   the Mac's). The control protocol is still APK-decoded only; capture the
+   official app's traffic and obtain direct hardware confirmation before
+   enabling any device command.
+2. **Scoreboard** — Swift/Control Center icon and disabled UX prototype added
+   2026-07-11 (two three-digit scores, reset, on/off). Still APK-decoded only;
+   no device command is enabled pending capture and hardware validation.
+3. **Countdown Timer** — Swift/Control Center icon and disabled UX prototype
+   added 2026-07-11 (duration, start, reset). Still APK-decoded only; no device
+   command is enabled pending capture and hardware validation.
+4. **Stopwatch** — Swift/Control Center icon and disabled UX prototype added
+   2026-07-11 (start, stop, reset). Still APK-decoded only; no device command
+   is enabled pending capture and hardware validation.
+5. **Alarms** — Swift/Control Center icon and disabled UX prototype added
+   2026-07-11 (alarm list and add action). Still APK-decoded only; no device
+   command is enabled pending capture and hardware validation.
+6. **Games** — Swift/Control Center icon and disabled UX prototype added
+   2026-07-11 (built-in game launcher). Still APK-decoded only; no device
+   command is enabled pending capture and hardware validation.
 
 Sleep-control commands remain a separate research question, not part of this
 batch. The project's existing warning is based on external reverse-engineering
