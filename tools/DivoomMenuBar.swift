@@ -146,6 +146,19 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var daemonProcess: Process?
     var controlState: DivoomControlState = .stopped
     var lastControlProbe: Date?
+    /// A displayed "Checking…" state means that a probe is appropriate; it
+    /// must not also mean that a probe is already in flight. Keeping these
+    /// separate prevents a freshly restarted daemon from getting stuck in
+    /// Checking forever.
+    var controlProbeInFlight = false
+    /// Stop/start invalidates an older asynchronous probe. Without this,
+    /// a reply from the service we just stopped could repaint the menu as
+    /// healthy after the user chose Stop.
+    var controlProbeGeneration: UInt = 0
+    /// A startup may repair one stale Bluetooth/RFCOMM session automatically
+    /// after the read-only health probe proves it is unusable. Never retry the
+    /// reset repeatedly during the same app launch.
+    var automaticStartupRecoveryAttempted = false
     var statusItemViewTimer: Timer?
     var controlCenterWindow: NSWindow?
     var controlCenterModel: ControlCenterModel?
@@ -363,10 +376,14 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // plain facts rather than exposing internal implementation layers.
         if !bluetoothLinked {
             menu.addItem(disabled("MiniToo: Not connected"))
-            menu.addItem(disabled(daemonRunning ? "Control service: Waiting for MiniToo" : "Control service: Not running"))
-            if shouldShowLastMessage { menu.addItem(disabled("Last: \(shortStatus(lastMessage))")) }
+            if daemonRunning {
+                menu.addItem(disabled("Control service: Waiting for MiniToo"))
+            }
             menu.addItem(NSMenuItem.separator())
             menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
+            if !daemonRunning {
+                menu.addItem(item("Start Control Service (currently stopped)", #selector(startDaemonMenu)))
+            }
             menu.addItem(NSMenuItem.separator())
             menu.addItem(debuggingToolsSubmenu())
             menu.addItem(NSMenuItem.separator())
@@ -380,29 +397,31 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // lifecycle and an aggregate "MiniToo: Ready" add no information.
         if !isReady {
             menu.addItem(disabled("MiniToo: \(overall)"))
-            menu.addItem(disabled("Daemon: \(daemonRunning ? "Running" : "Stopped")"))
+            if daemonRunning {
+                menu.addItem(disabled("Daemon: Running"))
+            }
         }
         menu.addItem(disabled("Bluetooth: \(bluetoothLinked ? "Connected" : "Disconnected")"))
         menu.addItem(disabled("Audio on this Mac: \(audioRoute.label)"))
-        menu.addItem(disabled("Device control: \(controlState.label)"))
+        if daemonRunning {
+            menu.addItem(disabled("Device control: \(controlState.label)"))
+        }
         if batteryMonitor.isEnabled {
             let chargingSuffix = (batteryMonitor.percent != nil && !batteryMonitor.isOnBattery) ? " (charging)" : ""
             let text = (batteryMonitor.percent.map { "Battery: \($0)%" } ?? "Battery: …") + chargingSuffix
             let iconName = BatteryMonitorModel.batteryIconName(percent: batteryMonitor.percent)
             menu.addItem(disabledBattery(text, image: NSImage(systemSymbolName: iconName, accessibilityDescription: nil)))
         }
-        if shouldShowLastMessage { menu.addItem(disabled("Last: \(shortStatus(lastMessage))")) }
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
         if controlState == .live {
             menu.addItem(brightnessSliderItem(enabled: true))
         }
         menu.addItem(NSMenuItem.separator())
-        if daemonRunning && controlState == .live {
-            menu.addItem(item("Stop Control Service", #selector(stopDaemonMenu)))
-        } else if daemonRunning {
+        if !daemonRunning {
+            menu.addItem(item("Start Control Service (currently stopped)", #selector(startDaemonMenu)))
+        } else if controlState != .live {
             menu.addItem(item("Retry Control Service", #selector(restartDaemonMenu)))
-            menu.addItem(item("Stop Control Service", #selector(stopDaemonMenu)))
         }
         menu.addItem(NSMenuItem.separator())
         menu.addItem(debuggingToolsSubmenu())
@@ -419,10 +438,15 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         submenu.addItem(item("Open Protocol Notes", #selector(openProtocol)))
         submenu.addItem(item("Open Menu Log", #selector(openMenuLog)))
         submenu.addItem(item("Open Daemon Log", #selector(openDaemonLog)))
+        if shouldShowLastMessage {
+            submenu.addItem(NSMenuItem.separator())
+            submenu.addItem(disabled("Latest status: \(shortStatus(lastMessage))"))
+        }
         // Debugging Tools is deliberately stable rather than context-pruned:
         // it is the user's escape hatch when our current status inference is
         // wrong or incomplete. Destructive recovery still asks for consent.
         submenu.addItem(NSMenuItem.separator())
+        submenu.addItem(item("Stop Control Service", #selector(stopDaemonMenu)))
         submenu.addItem(item("Restart Control Service", #selector(restartDaemonMenu)))
         submenu.addItem(item("Disconnect MiniToo Bluetooth + Retry Control Service…", #selector(recoverBluetoothAndRestartControlService)))
         parent.submenu = submenu
@@ -469,8 +493,9 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return String(singleLine.prefix(limit - 1)) + "…"
     }
 
-    /// Routine lifecycle/update configuration text does not earn a permanent
-    /// status row. Action results and errors still remain visible.
+    /// Routine lifecycle/update configuration text does not need a diagnostic
+    /// row. Non-routine results live in Debugging Tools rather than moving the
+    /// main menu's normal controls around after every action.
     var shouldShowLastMessage: Bool {
         let normalMessages = [
             "Ready",
@@ -536,22 +561,40 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// A recent valid WhiteNoise/Get reply is an end-to-end RFCOMM proof. The
     /// query is capture-derived and read-only; it runs at most once per 15s
     /// while the menu is opened, never as a background heartbeat.
-    func refreshControlStateIfNeeded() {
-        guard isDaemonRunning() else { controlState = .stopped; return }
-        guard isAudioConnected() else { controlState = .unavailable; return }
+    func refreshControlStateIfNeeded(allowAutomaticStartupRecovery: Bool = false) {
+        guard isDaemonRunning() else {
+            controlProbeInFlight = false
+            controlState = .stopped
+            return
+        }
+        guard isAudioConnected() else {
+            controlProbeInFlight = false
+            controlState = .unavailable
+            return
+        }
         if let lastControlProbe, Date().timeIntervalSince(lastControlProbe) < 15 { return }
-        guard controlState != .checking else { return }
+        guard !controlProbeInFlight else { return }
+        controlProbeInFlight = true
         controlState = .checking
+        let probeGeneration = controlProbeGeneration
         let job: [String: Any] = [
             "Command": "WhiteNoise/Get", "DeviceId": 600111083,
             "DevicePassword": 1777733348, "Token": 1777741943, "UserId": 404779143,
         ]
-        guard let body = try? JSONSerialization.data(withJSONObject: job) else { controlState = .unavailable; return }
+        guard let body = try? JSONSerialization.data(withJSONObject: job) else {
+            controlProbeInFlight = false
+            controlState = .unavailable
+            rebuildMenu()
+            refreshTitle()
+            return
+        }
         let packet = DivoomRawFrame.build(cmd: 0x01, body: body)
         let path = DivoomRawFrame.writePacketsFile(packet, name: "control-health", in: capturesDir)
         DivoomRawFrame.submit(packetsPath: path, port: UInt16(daemonPort) ?? 40583, waitForReply: 1.5) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard self.controlProbeGeneration == probeGeneration else { return }
+                self.controlProbeInFlight = false
                 self.lastControlProbe = Date()
                 guard let data = result.data(using: .utf8),
                       let outer = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -559,6 +602,18 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                       let replyData = reply.data(using: .utf8),
                       (try? JSONSerialization.jsonObject(with: replyData)) != nil
                 else {
+                    // An extant daemon process is not proof that its RFCOMM
+                    // channel still works. Try one controlled reset only for
+                    // the first launch/start probe; ordinary menu refreshes
+                    // merely report the failure and never disrupt audio.
+                    if allowAutomaticStartupRecovery && !self.automaticStartupRecoveryAttempted {
+                        self.automaticStartupRecoveryAttempted = true
+                        self.setStatus("Resetting MiniToo Bluetooth control link…")
+                        self.stopDaemon { [weak self] in
+                            self?.startDaemon(disconnectFirst: true, allowAutomaticStartupRecovery: false)
+                        }
+                        return
+                    }
                     self.controlState = .unavailable
                     self.rebuildMenu()
                     self.refreshTitle()
@@ -574,17 +629,20 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Establish the initial menu-bar health state without making the user
     /// open its menu. This is one existing, read-only WhiteNoise/Get probe
     /// after startup/reuse—not a continuous heartbeat or a new opcode.
-    func scheduleInitialControlProbe() {
+    func scheduleInitialControlProbe(allowAutomaticStartupRecovery: Bool = true) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
             self.lastControlProbe = nil
-            self.refreshControlStateIfNeeded()
+            self.refreshControlStateIfNeeded(allowAutomaticStartupRecovery: allowAutomaticStartupRecovery)
         }
     }
 
 
-    func startDaemon(disconnectFirst: Bool) {
+    func startDaemon(disconnectFirst: Bool, allowAutomaticStartupRecovery: Bool = true) {
         DispatchQueue.main.async {
+            self.controlProbeGeneration &+= 1
+            self.controlProbeInFlight = false
+            self.lastControlProbe = nil
             self.controlState = .checking
             self.setStatus("Starting control service…")
         }
@@ -595,6 +653,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Thread.sleep(forTimeInterval: disconnectFirst ? 1.5 : 0.0)
             if self.isDaemonRunning() {
                 self.setStatus("Daemon already running")
+                self.scheduleInitialControlProbe(allowAutomaticStartupRecovery: allowAutomaticStartupRecovery)
                 return
             }
             let log = self.daemonLog
@@ -621,7 +680,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Thread.sleep(forTimeInterval: 2.0)
                 if self.isDaemonRunning() {
                     self.setStatus("Daemon started")
-                    self.scheduleInitialControlProbe()
+                    self.scheduleInitialControlProbe(allowAutomaticStartupRecovery: allowAutomaticStartupRecovery)
                 } else {
                     self.controlState = .unavailable
                     let logText = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
@@ -639,20 +698,32 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    func stopDaemon() {
+    func stopDaemon(completion: @escaping () -> Void = {}) {
+        // Publish the state transition before process teardown. `pkill` and
+        // RFCOMM shutdown can take a moment, but the UI must not keep showing
+        // a healthy diamond while the user has explicitly stopped control.
+        controlProbeGeneration &+= 1
+        controlProbeInFlight = false
+        lastControlProbe = nil
+        controlState = .stopped
+        setStatus("Control service stopped")
         DispatchQueue.global(qos: .userInitiated).async {
             self.daemonProcess?.terminate()
             self.daemonProcess = nil
             _ = self.run("/usr/bin/pkill", ["-f", "divoom-daemon"])
             try? FileManager.default.removeItem(at: self.daemonPidFile)
-            self.setStatus("Daemon stopped")
+            DispatchQueue.main.async {
+                completion()
+            }
         }
     }
 
     @objc func stopDaemonMenu() { stopDaemon() }
+    @objc func startDaemonMenu() { startDaemon(disconnectFirst: false) }
     @objc func restartDaemonMenu() {
-        stopDaemon()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { self.startDaemon(disconnectFirst: false) }
+        stopDaemon { [weak self] in
+            self?.startDaemon(disconnectFirst: false)
+        }
     }
 
     /// Last-resort recovery for the known RFCOMM-busy failure.  This is a
@@ -665,9 +736,8 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.addButton(withTitle: "Disconnect and Retry")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        stopDaemon()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-            self.startDaemon(disconnectFirst: true)
+        stopDaemon { [weak self] in
+            self?.startDaemon(disconnectFirst: true)
         }
     }
 

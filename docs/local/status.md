@@ -146,9 +146,11 @@ probe is older than a modest TTL while the menu is open; do not turn the menu
 into a continuous device poller. The first implementation must validate that
 CoreAudio can reliably correlate the configured MiniToo with a local output
 route; until then show Audio as **Unknown**, not guessed. On launch, preserve
-any existing healthy daemon but do not automatically call the generic
-`closeConnection()` "disconnect first" path merely to establish status: taking
-over a local connection must remain a named, user-confirmed recovery action.
+any existing healthy daemon and do not call the generic `closeConnection()`
+"disconnect first" path merely to establish status. The sole exception is one
+automatic reset after the initial read-only control probe proves the inherited
+RFCOMM channel unusable; later/manual recovery remains a named,
+user-confirmed action.
 
 **Implementation in progress (2026-07-12, uncommitted):** Control Center's
 unfinished tiles are now badged/disabled. The control service resumes/starts
@@ -159,12 +161,13 @@ state (exact saved-name match only; otherwise Unknown), and an end-to-end
 when Bluetooth is unavailable, `○` when Bluetooth is on but there is no
 MiniToo connection, `◐` only for an actual incomplete MiniToo connection, and
 `◆` when all measured components are ready. Bluetooth-off intentionally
-collapses to a simple instruction rather than a diagnostic matrix. The old
-generic `closeConnection()` recovery remains only as a confirmation-gated
-Debugging Tools action, because it can interrupt audio and is not a targeted
-audio-profile operation. Debugging Tools intentionally remains stable rather
-than context-pruned: its actions are the escape hatch if status inference is
-wrong or incomplete. Hardware validation is still required before calling
+collapses to a simple instruction rather than a diagnostic matrix. The generic
+`closeConnection()` recovery is used automatically only by the one-shot failed
+initial-probe path; it otherwise remains a confirmation-gated Debugging Tools
+action because it can interrupt audio and is not a targeted audio-profile
+operation. Debugging Tools intentionally remains stable rather than
+context-pruned: its actions are the escape hatch if status inference is wrong
+or incomplete. Hardware validation is still required before calling
 CoreAudio's name correlation reliable or finalizing the display/action policy.
 When Bluetooth is on but MiniToo itself is not linked, the menu intentionally
 shows only `MiniToo: Not connected` and one plain control-service waiting/not-
@@ -207,9 +210,10 @@ health—plus battery. Labels are user-facing: `Bluetooth`, `Audio on this
 Mac`, and `Device control: Working`; they avoid making the daemon an ordinary
 user concern. Battery is a standard left-aligned `NSMenuItem` whose icon is an
 inline title attachment after the percentage; do not use a custom menu view,
-leading menu image, or hand-tuned position. Hide routine `Last:` messages such
-as updater-not-configured and daemon-started; retain actual action results/
-errors.
+leading menu image, or hand-tuned position. Do not put `Last:` in the main
+menu at all: even a harmless brightness adjustment should not move the normal
+controls. Routine status is omitted; non-routine action results/errors appear
+only as `Latest status:` inside **Debugging Tools**.
 
 **Initial control status (2026-07-12, uncommitted):** The first implementation
 only ran the existing read-only `WhiteNoise/Get` health probe when the user
@@ -219,6 +223,35 @@ probe after daemon launch or reuse so the status glyph updates independently.
 Keep the menu-open TTL for later refreshes; this is not a continuous heartbeat
 or a speculative passive signal.
 
+**Control lifecycle correction (2026-07-12, uncommitted):** A follow-up
+interactive test exposed two real state-machine mistakes. First, starting or
+restarting set the visible state to `Checking…`, while the probe scheduler
+mistook that visible state for an in-flight probe and therefore refused to
+probe; a working service could remain stuck in `Checking…`. Probe-in-flight is
+now tracked separately from the visible state. Second, stopping did not
+invalidate a reply already in flight or publish `Stopped` until after process
+teardown, so the full diamond could remain visible briefly. Stop/start now
+invalidate old callbacks and immediately publish the correct partial/stopped
+state. The top-level menu has exactly one contextual recovery action:
+`Start Control Service (currently stopped)` when absent, or `Retry Control
+Service` only when a running service is unhealthy. Stopping and restarting are
+debugging/recovery operations and therefore live only in **Debugging Tools**;
+there is no top-level Stop action and no confusing Retry+Stop pair.
+
+**Stale RFCOMM launch recovery (2026-07-12, uncommitted):** A real launch
+regression showed why the original startup path had a disconnect step. The
+menu app found an existing `divoom-daemon` process and reused it, but the
+daemon's RFCOMM channel was stale (`0x-1ffffd44`): macOS audio and the generic
+Bluetooth link were healthy while `WhiteNoise/Get` could not obtain a valid
+reply. The control probe correctly reported **Unavailable**, but process
+existence was incorrectly treated as a sufficient startup condition. Launch
+now remains non-disruptive when its initial probe succeeds. If—and only if—the
+first probe fails, it stops that daemon, closes the generic MiniToo Bluetooth
+connection once, and starts a fresh daemon; a second failure is reported and
+never loops or triggers further automatic disconnects. Menu-open probes do
+not invoke this recovery. The manual Debugging Tools recovery remains for a
+later failure in the same launch.
+
 ### Intended menu states
 
 1. **No configured/paired MiniToo:** show `Set Up MiniToo…`; no daemon or
@@ -227,18 +260,20 @@ or a speculative passive signal.
    Settings…`; no start/disconnect/reconnect actions.
 3. **Configured but missing/unpaired:** show `Set Up MiniToo…` / rescan;
    no daemon actions.
-4. **Control daemon stopped:** automatically start the control service without
-   disconnecting Bluetooth; show its transition status, not an extra routine
-   user action. Debugging Tools always exposes the explicit,
+4. **Control daemon stopped:** normal app launch starts the control service
+   automatically without disconnecting Bluetooth. If it is subsequently
+   stopped, replace daemon-status text with the useful top-level action
+   `Start Control Service (currently stopped)`. Debugging Tools always exposes
+   the explicit,
    confirmation-gated `Disconnect MiniToo Bluetooth + Retry Control Service…`
    recovery action; it must say it can interrupt this Mac's playback and
    generic Bluetooth connection.
 5. **Daemon starting/stopping:** show status only, with no competing action.
-6. **Control healthy:** show `Stop Control Service`; put restart/retry in a
-   Troubleshooting submenu rather than normal operation.
-7. **Daemon unhealthy/control unavailable:** show `Retry Control Service`,
-   `Stop Control Service`, and troubleshooting/log access. Explain that another
-   device may be using MiniToo, but do not claim that as fact.
+6. **Control healthy:** show no normal lifecycle action; put Stop and Restart
+   in Debugging Tools rather than presenting them as ordinary use.
+7. **Daemon unhealthy/control unavailable:** show only `Retry Control Service`
+   plus troubleshooting/log access. Explain that another device may be using
+   MiniToo, but do not claim that as fact.
 
 The standalone `Disconnect Divoom Audio` / `Reconnect Divoom Audio` items are
 to be removed or replaced after local audio-route detection is validated:
