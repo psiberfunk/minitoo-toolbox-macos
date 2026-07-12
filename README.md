@@ -106,12 +106,15 @@ On launch, the app:
 
 1. Starts the Swift RFCOMM daemon automatically, without deliberately
    disconnecting the MiniToo Bluetooth link.
-2. Keeps the daemon available from the menu bar.
+2. Verifies the control channel with one read-only request. If an inherited
+   daemon has a stale RFCOMM channel, it resets the MiniToo Bluetooth link
+   once and retries; a healthy connection is left alone.
+3. Keeps the daemon available from the menu bar.
 
-If a control connection is unavailable because macOS reports RFCOMM as busy,
-the menu's **Debugging Tools** offers a confirmation-gated recovery action to
-disconnect the generic MiniToo Bluetooth link and retry. It can interrupt
-MiniToo audio, so it is not used during normal startup.
+If control remains unavailable after that one automatic recovery, the menu's
+**Debugging Tools** offers a confirmation-gated **Disconnect MiniToo Bluetooth
++ Retry Control Service…** action. It can interrupt MiniToo audio and never
+runs repeatedly in the background.
 
 ## Running tests
 
@@ -210,19 +213,20 @@ Iconset" otherwise.)
 
 ## Menu-bar app
 
-The menu-bar title indicates daemon state:
-
-```text
-◇ Divoom = daemon stopped
-◆ Divoom = daemon running
-```
+The menu-bar diamond summarizes the user-visible connection state: outline
+means no MiniToo Bluetooth link, half-filled means partial/checking, and filled
+means Bluetooth, local audio routing, and end-to-end device control are ready.
+Bluetooth-off uses an explicit `×` state instead. The menu lists those layers
+separately when they need diagnosis; it does not expose a redundant daemon row
+in the ready state.
 
 Useful actions:
 
-- **Send Image/GIF/Video…** — choose a media file and send it.
-- **Disconnect Audio + Start Daemon** — use when macOS audio owns the Bluetooth connection.
-- **Restart Daemon** — stop, disconnect audio, and reopen RFCOMM.
-- **Open Menu Log / Open Daemon Log** — inspect failures.
+- **Start Control Service (currently stopped)** — appears only when it can
+  resolve that state.
+- **Retry Control Service** — appears only for a running but unhealthy service.
+- **Debugging Tools** — contains Stop/Restart Control Service, the explicit
+  Bluetooth-reset recovery, logs, captures, and any non-routine latest status.
 
 ## CLI usage
 
@@ -366,8 +370,10 @@ omo-slim/                    Local test/media assets; not core project API
 
 ## Troubleshooting
 
-If daemon start fails with an RFCOMM error, use the app's **Disconnect Audio +
-Start Daemon** action, then restart the daemon.
+If device control remains unavailable after the one automatic launch recovery,
+use **Debugging Tools → Disconnect MiniToo Bluetooth + Retry Control
+Service…**. This can interrupt audio; use it as a recovery action, not as a
+normal connection step.
 
 If a send reports `sent but final ACK not observed`, the device may still have updated successfully. This is usually an ACK-observation issue, not necessarily a failed transfer.
 

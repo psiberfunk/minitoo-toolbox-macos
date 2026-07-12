@@ -152,7 +152,7 @@ automatic reset after the initial read-only control probe proves the inherited
 RFCOMM channel unusable; later/manual recovery remains a named,
 user-confirmed action.
 
-**Implementation in progress (2026-07-12, uncommitted):** Control Center's
+**Connection-status implementation (2026-07-12):** Control Center's
 unfinished tiles are now badged/disabled. The control service resumes/starts
 automatically on launch without deliberately disconnecting Bluetooth. The menu
 distinguishes a generic Bluetooth link, conservative local CoreAudio route
@@ -178,7 +178,7 @@ audio name absent from CoreAudio is shown as **Unavailable** (and makes
 overall state `Partial — audio unavailable`); only a missing saved name or
 ambiguous CoreAudio match is **Unknown**.
 
-**CoreAudio follow-up (2026-07-12, uncommitted):** Hardware/UI validation
+**CoreAudio follow-up (2026-07-12):** Hardware/UI validation
 showed macOS correctly listed and selected `Divoom MiniToo-Audio` while the
 app still showed Unknown. The first CoreAudio implementation read
 `kAudioObjectPropertyName` with `takeUnretainedValue()`, but Apple's SDK
@@ -191,7 +191,7 @@ objects as one route: default output means Selected; otherwise any live match
 means Available. The user's physical test confirmed macOS audio playback on
 MiniToo while selected; re-test the app display after rebuilding.
 
-**Name identity rule (2026-07-12, uncommitted):** The discovered Bluetooth MAC
+**Name identity rule (2026-07-12):** The discovered Bluetooth MAC
 is the stable identity used to open RFCOMM and inspect the generic link; it is
 never replaced by a display name. The display name is only the CoreAudio
 correlation hint. On status refresh the app reads the current IOBluetooth name
@@ -201,7 +201,7 @@ The menu-bar glyphs use an open diamond for no MiniToo connection, a
 bottom-half-filled diamond for partial connection, and a filled diamond for
 Ready; Bluetooth-off remains an explicit × state.
 
-**Ready-state density (2026-07-12, uncommitted):** In Ready, the filled
+**Ready-state density (2026-07-12):** In Ready, the filled
 menu-bar diamond already supplies the aggregate result. Do not also show
 `MiniToo: Ready` or `Daemon: Running`: the former repeats the aggregate and
 the latter is implied by a successful `Control: Live` reply. Keep the three
@@ -215,7 +215,7 @@ menu at all: even a harmless brightness adjustment should not move the normal
 controls. Routine status is omitted; non-routine action results/errors appear
 only as `Latest status:` inside **Debugging Tools**.
 
-**Initial control status (2026-07-12, uncommitted):** The first implementation
+**Initial control status (2026-07-12):** The first implementation
 only ran the existing read-only `WhiteNoise/Get` health probe when the user
 opened the menu, so the status bar could remain Partial until clicked even
 though the daemon and audio route were already ready. Schedule exactly one
@@ -223,7 +223,7 @@ probe after daemon launch or reuse so the status glyph updates independently.
 Keep the menu-open TTL for later refreshes; this is not a continuous heartbeat
 or a speculative passive signal.
 
-**Control lifecycle correction (2026-07-12, uncommitted):** A follow-up
+**Control lifecycle correction (2026-07-12):** A follow-up
 interactive test exposed two real state-machine mistakes. First, starting or
 restarting set the visible state to `Checking…`, while the probe scheduler
 mistook that visible state for an in-flight probe and therefore refused to
@@ -238,7 +238,7 @@ Service` only when a running service is unhealthy. Stopping and restarting are
 debugging/recovery operations and therefore live only in **Debugging Tools**;
 there is no top-level Stop action and no confusing Retry+Stop pair.
 
-**Stale RFCOMM launch recovery (2026-07-12, uncommitted):** A real launch
+**Stale RFCOMM launch recovery (2026-07-12):** A real launch
 regression showed why the original startup path had a disconnect step. The
 menu app found an existing `divoom-daemon` process and reused it, but the
 daemon's RFCOMM channel was stale (`0x-1ffffd44`): macOS audio and the generic
@@ -251,6 +251,15 @@ connection once, and starts a fresh daemon; a second failure is reported and
 never loops or triggers further automatic disconnects. Menu-open probes do
 not invoke this recovery. The manual Debugging Tools recovery remains for a
 later failure in the same launch.
+
+**Published software checkpoint (2026-07-12):** Commit `cb31991` implements
+the menu lifecycle/state corrections, one-shot stale-RFCOMM launch recovery,
+and Debugging-Tools-only `Latest status` diagnostics. Local Swift tests and
+arm64 packaging passed; GitHub Actions run `29201480002` passed unit tests,
+both architecture slices, universal assembly, and publication. The user has
+physically confirmed the manual Bluetooth-reset recovery path restores device
+control. The new *automatic* failed-probe recovery still needs a deliberate
+hardware observation before it can be called verified.
 
 ### Intended menu states
 
