@@ -71,7 +71,7 @@ Required checks: GitHub default branch remains `main`; old release/feed URLs
 redirect; new workflow builds embed the new repository; `main-latest` is
 published successfully. Monitor the full workflow to completion.
 
-### Phase 4 — post-rename release and public audit (in progress)
+### Phase 4 — post-rename release and public audit (complete: `3520f51`)
 
 Scope: publish one renamed Main release, check release asset/appcast URLs,
 update public GitHub description/topics, and run a focused stale-public-name
@@ -80,11 +80,16 @@ audit. Retain historical/protocol/upstream references that are accurate.
 Completed evidence: repository renamed; `fork` points to the new repository;
 the former feed URL returned a 301 to the new `main-latest` appcast; workflow
 run `29255939905` completed successfully; the appcast is `MiniToo Toolbox`
-version `0.2.0-alpha.5` and points to the new immutable update archive.
+and points to the new immutable update archive. Workflow run `29256371448`
+then completed successfully and reduced `main-latest` to the current
+MiniToo Toolbox DMG, checksum, release notes, appcast, and FFmpeg source.
+The GitHub description is “Native macOS controls and media tools for the
+Divoom MiniToo.” A focused public-reference audit found only intentional
+upstream credit, legacy-user bridge guidance, and release-cleanup rules.
 
-Next committed checkpoint: make stale old-name rolling-release asset removal
-durable, publish that cleanup through CI, then verify the public release,
-description, and topics. Do not remove `personal-latest` or its bridge assets.
+The neutral README acknowledgement follow-up is `4410da4`; it is Markdown-only
+and intentionally did not publish a new application release. Do not remove
+`personal-latest` or its bridge assets.
 
 ### Phase 5 — retirement decision (explicit later decision)
 
