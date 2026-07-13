@@ -139,9 +139,8 @@ Logs and generated packet artifacts live in:
 - The protocol is unofficial. Never transmit a new opcode without following
   the capture-first safety process in [PROTOCOL.md](PROTOCOL.md).
 
-## License and provenance
+## Acknowledgements and third-party notices
 
-The project is in a licensing/provenance transition. Upstream attribution and
-third-party notices remain in place. A planned clean-room replacement process
-is documented privately; this README does not claim that inherited work has
-already been relicensed or replaced.
+MiniToo Toolbox retains attribution to its upstream foundation and to bundled
+third-party components. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+for notices that apply to distributed dependencies.
