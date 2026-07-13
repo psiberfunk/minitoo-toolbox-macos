@@ -46,9 +46,18 @@ show_sidebar = False
 arrange_by = None
 icon_size = 112
 text_size = 13
+
+# Finder's `Iloc` coordinates address the upper-left of its icon cell, not
+# the visual centre of the icon.  With this 112pt icon / 13pt label setup the
+# centre is rendered 72pt down and to the right of the saved location.  The
+# artwork's panels are centred at (195, 258) and (597, 258), so store their
+# corresponding Finder locations rather than their visual centres.  Saving
+# the panel centres directly here is what produced the 72pt lower-right
+# offset visible in the released DMG.
+_FINDER_ICON_CELL_CENTER_OFFSET = 72
 icon_locations = {
-    "MiniToo Toolbox.app": (195, 258),
-    "INSTALLING.md": (597, 258),
+    "MiniToo Toolbox.app": (195 - _FINDER_ICON_CELL_CENTER_OFFSET, 258 - _FINDER_ICON_CELL_CENTER_OFFSET),
+    "INSTALLING.md": (597 - _FINDER_ICON_CELL_CENTER_OFFSET, 258 - _FINDER_ICON_CELL_CENTER_OFFSET),
     # dmgbuild names the compiled HiDPI background ".background.tiff" and
     # relies on the leading dot plus the `hide` setting below (SetFile -a V,
     # confirmed set) to stay invisible. Neither survives a user's Finder

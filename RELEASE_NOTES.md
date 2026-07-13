@@ -30,7 +30,8 @@ It is a substantial downstream expansion of the original upstream menu-bar app.
   local-audio, and control-service health states. The app also recovers its
   control service more carefully after launch or a dropped connection.
 - **Polished Mac experience:** an app icon, Preferences (including optional
-  Dock icon and battery display), and a purpose-built DMG installer.
+  Dock icon and battery display), and a purpose-built DMG installer whose app
+  and installation-guide icons align with its artwork.
 - **Signed Main-channel updates:** after first-launch consent, the app can
   check its embedded, branch-locked signed update feed and download only the
   newest compatible Main release. Preferences shows the exact source and
