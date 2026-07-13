@@ -12,7 +12,7 @@ on:
         required: false
         default: main
         type: choice
-        options: [main, personal-transition, main-transition]
+        options: [main, personal-transition, main-transition, main-legacy-bridge]
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Reject an unsafe bridge invocation
-        if: (inputs.release_channel == 'personal-transition' && github.ref_name != 'personal') || (inputs.release_channel == 'main-transition' && github.ref_name != 'main')
+        if: (inputs.release_channel == 'personal-transition' && github.ref_name != 'personal') || ((inputs.release_channel == 'main-transition' || inputs.release_channel == 'main-legacy-bridge') && github.ref_name != 'main')
         run: |
           echo "Transition releases may only be built from their documented source branch." >&2
           exit 1
@@ -74,7 +74,8 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          RELEASE_CHANNEL="${{ inputs.release_channel == 'personal-transition' && 'personal' || inputs.release_channel == 'main-transition' && 'main-transition' || 'main' }}"
+          REQUESTED_CHANNEL="${{ inputs.release_channel || 'main' }}"
+          RELEASE_CHANNEL="main"
           RUNTIME_CHANNEL="main"
           VERSION_PREFIX="0.2.0-alpha"
           # Sparkle compares CFBundleVersion, not CFBundleShortVersionString.
@@ -85,13 +86,17 @@ jobs:
           RELEASE_BUILD_NUMBER=$((3000 + GITHUB_RUN_NUMBER))
           TRANSITION_FEED_URL=""
           TRANSITION_CHANNEL=""
-          if [[ "$RELEASE_CHANNEL" == "personal" ]]; then
+          if [[ "$REQUESTED_CHANNEL" == "personal-transition" ]]; then
+            RELEASE_CHANNEL="personal"
             RUNTIME_CHANNEL="personal"
             VERSION_PREFIX="0.1.0-alpha"
             RELEASE_BUILD_NUMBER=$((1500 + GITHUB_RUN_NUMBER))
             TRANSITION_FEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/main-transition-latest/appcast-main-transition.xml"
             TRANSITION_CHANNEL="main-transition"
-          elif [[ "$RELEASE_CHANNEL" == "main-transition" ]]; then
+          elif [[ "$REQUESTED_CHANNEL" == "main-transition" ]]; then
+            RELEASE_CHANNEL="main-transition"
+            RELEASE_BUILD_NUMBER=$((2000 + GITHUB_RUN_NUMBER))
+          elif [[ "$REQUESTED_CHANNEL" == "main-legacy-bridge" ]]; then
             RELEASE_BUILD_NUMBER=$((2000 + GITHUB_RUN_NUMBER))
           fi
           DIVOOM_ARCHS=${{ matrix.arch }} \
@@ -162,6 +167,7 @@ jobs:
       - name: Combine architecture-specific resources and binaries
         env:
           CHANNEL: ${{ inputs.release_channel == 'personal-transition' && 'personal' || inputs.release_channel == 'main-transition' && 'main-transition' || 'main' }}
+          LEGACY_ARCHIVE: ${{ inputs.release_channel == 'main-transition' || inputs.release_channel == 'main-legacy-bridge' }}
           VERSION_PREFIX: ${{ inputs.release_channel == 'personal-transition' && '0.1.0-alpha' || '0.2.0-alpha' }}
           DIVOOM_SPARKLE_PRIVATE_KEY: ${{ secrets.DIVOOM_SPARKLE_PRIVATE_KEY }}
         run: |
@@ -189,7 +195,7 @@ jobs:
           # the currently installed bundle name. The one-time rename bridge
           # therefore keeps the archive directory as Divoom MiniToo.app while
           # preserving the new app's signed contents and metadata inside it.
-          if [[ "$CHANNEL" == "main-transition" ]]; then
+          if [[ "$LEGACY_ARCHIVE" == "true" ]]; then
             LEGACY_UPDATE_ROOT="legacy-update-root"
             mkdir -p "$LEGACY_UPDATE_ROOT"
             ditto "MiniToo Toolbox.app" "$LEGACY_UPDATE_ROOT/Divoom MiniToo.app"
