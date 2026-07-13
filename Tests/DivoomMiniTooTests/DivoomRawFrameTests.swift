@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import DivoomMiniToo
+@testable import MiniTooToolbox
 
 /// Expected bytes below are independently computed from PROTOCOL.md's
 /// documented reference algorithm (frame(cmd, body) in the "Generic frame

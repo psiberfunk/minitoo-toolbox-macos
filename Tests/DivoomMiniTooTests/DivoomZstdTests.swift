@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import CZstd
-@testable import DivoomMiniToo
+@testable import MiniTooToolbox
 
 enum ZstdTestDecompressError: Error {
     case unknownContentSize

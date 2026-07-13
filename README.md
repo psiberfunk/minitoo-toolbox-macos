@@ -1,401 +1,147 @@
-# Divoom MiniToo macOS Daemon
+# MiniToo Toolbox for macOS
 
-Tools for sending images, GIFs, and short videos to a **Divoom MiniToo** over Bluetooth Classic RFCOMM from macOS.
+MiniToo Toolbox is an independently maintained macOS app for controlling a
+Divoom MiniToo over Bluetooth Classic. It provides a native Control Center,
+menu-bar controls, media sending, device configuration, and a local RFCOMM
+control service—without hardcoding a device address or bundling a Python
+runtime in the shipped app.
 
-The core of this repo is a Swift daemon that keeps the Divoom app channel open, plus a native macOS app with both Control Center and menu-bar controls, and Python media conversion tooling.
+## Project status and upstream credit
 
-> `omo-slim/` contains local working media/assets and is not the main project API. The reusable project is the daemon, menu-bar app, CLI, and protocol notes.
+This project began as a downstream fork of
+[alvinunreal/divoom-minitoo-osx](https://github.com/alvinunreal/divoom-minitoo-osx).
+Thank you to its upstream author for the original foundation. MiniToo Toolbox
+is now developed and released as its own independently maintained project:
+its `main` branch, releases, updater channel, user interface, and feature set
+are no longer the upstream development line. It is not an official Divoom app
+and is not endorsed by Divoom or the upstream project.
 
-## What this does
+The MiniToo protocol is unofficial and reverse-engineered. Read
+[PROTOCOL.md](PROTOCOL.md) before developing against it; its safety section
+blocks known-risk opcodes.
 
-- Opens the Divoom MiniToo app protocol over Bluetooth RFCOMM channel `1`.
-- Avoids repeated macOS Bluetooth audio reconnect/disconnect by keeping one daemon connection open.
-- Converts PNG/JPEG/GIF/MP4/video into the Divoom animation payload format.
-- Sends jobs through a localhost daemon at `127.0.0.1:40583`.
-- Provides a copyable macOS `.app` that opens Control Center on launch and keeps menu-bar controls available while it runs.
-- Includes native Control Center actions for the MiniToo stopwatch (start,
-  pause, reset), Countdown timer, onboard noise meter (start, stop), Pixel
-  Slot launcher, and one-way clock sync (custom time, current Mac time, or an
-  optional 10-minute background cadence), alongside media, white-noise, album,
-  atmosphere, and device-setting controls.
+## Download and install
 
-## Device assumptions
+Download the latest universal DMG from this repository's **main-latest**
+prerelease, then follow [INSTALLING.md](INSTALLING.md). The app currently uses
+ad-hoc signing, so macOS may require one explicit first-launch approval.
 
-```text
-RFCOMM channel: 1
-Daemon port:    40583
-```
+Existing Divoom MiniToo macOS / Personal-channel users update through a signed
+compatibility bridge into the Main channel. Do not delete an installed old app
+before accepting its offered update.
 
-The device's Bluetooth MAC address is **not** hardcoded — see "First-time setup" below for how the app finds and remembers it.
+## What you can do
+
+All completed features are available from the actual macOS UI.
+
+| Area | Available now |
+| --- | --- |
+| Media | Send 128×128 or full-screen 160×128 still images, GIFs, and video. |
+| Photos | Add persistent still photos to the MiniToo Photo Album. |
+| Display | Brightness, screen on/off, and Custom Face selection. |
+| Atmosphere | Background and text-effect controls, with device-state readback where available. |
+| Sound/tools | White Noise, Noise Meter, Stopwatch, Countdown, Pixel Slot launcher, and one-way Time Sync. |
+| Settings | Notification level, temperature/date/clock formats, Bluetooth auto-reconnect, remembered volume, and auto power-off. |
+| macOS experience | Scan/select a device, Preferences, menu-bar status, Control Center, optional Dock presence, battery display, and guided control-service recovery. |
+
+Features that have not been confirmed from an Android HCI capture and direct
+hardware testing remain unavailable rather than guessing at device commands.
+Alarms and Scoreboard are examples of deliberately disabled controls.
 
 ## First-time setup
 
-The app doesn't ship with any device's MAC address baked in. The first time it launches with no address cached yet, it opens a **"Set Up MiniToo"** window instead of starting the daemon:
+1. Power on the MiniToo and make sure another phone/tablet is not actively
+   using its control connection.
+2. Launch MiniToo Toolbox. It opens **Set Up Your MiniToo** if no device is
+   saved.
+3. Choose **Scan for Devices**, then **Use This Device** for your MiniToo.
+   macOS may show its pairing prompt.
+4. The app stores the selected Bluetooth address and uses it on later launches.
+   Change it in **Preferences → Device → Change Device…**.
 
-1. Power on the MiniToo and make sure it isn't currently connected to a phone/tablet (a Bluetooth Classic device generally only holds one active connection at a time).
-2. Click **Scan for Devices**. This runs a short native Bluetooth inquiry and
-   separately lists saved pairing records. Nearby devices are labeled
-   **Nearby**; saved records are not evidence that a device is currently in
-   range. If Bluetooth is off, the app asks you to turn it on first.
-3. Click **Use This Device** next to the right entry. If the device isn't already paired, this triggers pairing; macOS may show its own native pairing prompt the first time.
-4. The address is cached (`UserDefaults`) and used for every future launch — you won't see this window again unless you use "Change Device…".
+The device address is never hardcoded in this project.
 
-To change devices later, or to fix a wrong auto-detected address, open **Preferences… (⌘,)** — the "Device" section shows the currently cached address and has a **Change Device…** button that reopens the same scan flow.
+## Connection and recovery
 
-**Advanced / scripting:** you can skip the scan UI entirely and set the address directly:
+The menu distinguishes the generic Bluetooth link, the local macOS audio
+route, and end-to-end device control. A filled diamond means all measured
+components are ready; an outline means the MiniToo is not linked; a half-filled
+diamond indicates partial or checking state. Bluetooth-off is shown explicitly.
 
-- Pass `--address XX:XX:XX:XX:XX:XX` as a launch argument to the app itself (re-caches it on that launch, then behaves normally).
-- The standalone CLI tools (`tools/divoom-daemon`, and the raw dev tools `DivoomRFCOMM`/`DivoomRFCOMMSend`) all take the address as their first positional argument — there's no default, so it must always be passed explicitly:
-  ```bash
-  tools/divoom-daemon B1:21:81:6F:4D:F0 1 40583
-  ```
+The app starts its RFCOMM control service without deliberately disconnecting
+audio. If a stale inherited connection is proven unusable, it performs one
+recovery attempt. For later failures, use **Debugging Tools → Disconnect
+MiniToo Bluetooth + Retry Control Service…**; that action can interrupt audio
+and is deliberately confirmation-gated.
 
-If you don't know your device's MAC and don't want to use the in-app scan,
-macOS Bluetooth Settings can display nearby and saved devices by name.
+## Updates
 
-## Requirements
+Updater-enabled builds ask once whether to check automatically. Updates are
+signed and locked to the repository/channel embedded in the app; a normal Main
+build checks only the Main feed, not GitHub's generic “latest release.”
+Preferences shows the source, branch, channel, commit, and build number and
+offers **Check for Updates…**.
 
-- macOS
-- Xcode Command Line Tools / Swift compiler
-- A MiniToo running firmware **343008 or later**. Older firmware may be
-  incompatible with the Bluetooth protocol used by this app; update the
-  MiniToo through Divoom's official mobile app before using this project.
+During the current ad-hoc-signing period, the update dialog offers a visible,
+default-checked option to remove quarantine from the verified replacement app
+before relaunch. It affects that app only; it does not change Gatekeeper
+globally. Developer ID signing and notarization remain future work.
 
-For the standalone dev-CLI tools only (`tools/divoom_send.py` and friends —
-not needed to build or run the app itself):
+## Build from source
 
-- Python virtualenv with `Pillow`, `zstandard`, and `pyserial` (`pip install -r requirements-app.txt`)
-- `ffmpeg` for GIF/video input
-
-The macOS app itself is fully native Swift: image/GIF/video encoding,
-zstd compression, and packet construction all run in-process (no Python,
-no PyInstaller, no bundled virtualenv). The app still bundles an LGPL-only
-FFmpeg executable, invoked directly for video/GIF frame decoding. Release
-builds no longer freeze or bundle any Python helper — the `tools/divoom_*.py`
-scripts remain in the repo purely as standalone dev-CLI/protocol-debugging
-tools, not as part of the shipped app.
-
-The app uses macOS's native IOBluetooth framework for scan, pairing, audio
-connection management, and RFCOMM. No Homebrew tools are required at runtime.
-
-## Build the macOS app
+Requirements: macOS, Xcode Command Line Tools, and a MiniToo running firmware
+343008 or later. The app is native Swift; Python is only needed for optional
+standalone development/protocol tools. FFmpeg is bundled in release builds for
+GIF/video decoding under LGPL terms.
 
 ```bash
-tools/build-divoom-app.sh
+bash tools/build-divoom-app.sh
+cp -R "build/MiniToo Toolbox.app" /Applications/
+open "/Applications/MiniToo Toolbox.app"
 ```
 
-To build both Swift slices on a Mac with the matching SDK support:
+To make a universal local build on a matching Mac:
 
 ```bash
-DIVOOM_ARCHS="arm64 x86_64" tools/build-divoom-app.sh
+DIVOOM_ARCHS="arm64 x86_64" bash tools/build-divoom-app.sh
 ```
 
-The independently maintained `main` branch's GitHub Actions workflow builds
-the two slices on their native runners and publishes one universal DMG to the
-rolling `main-latest` prerelease.
-
-This builds:
-
-```text
-build/Divoom MiniToo.app
-```
-
-Install it:
-
-```bash
-cp -R "build/Divoom MiniToo.app" /Applications/
-open "/Applications/Divoom MiniToo.app"
-```
-
-On launch, the app:
-
-1. Starts the Swift RFCOMM daemon automatically, without deliberately
-   disconnecting the MiniToo Bluetooth link.
-2. Verifies the control channel with one read-only request. If an inherited
-   daemon has a stale RFCOMM channel, it resets the MiniToo Bluetooth link
-   once and retries; a healthy connection is left alone.
-3. Keeps the daemon available from the menu bar.
-
-If control remains unavailable after that one automatic recovery, the menu's
-**Debugging Tools** offers a confirmation-gated **Disconnect MiniToo Bluetooth
-+ Retry Control Service…** action. It can interrupt MiniToo audio and never
-runs repeatedly in the background.
-
-## Running tests
+Run protocol/encoding tests with:
 
 ```bash
 swift test
 ```
 
-Unit tests (`Tests/DivoomMiniTooTests/`) cover the pure protocol/encoding
-logic only -- frame checksums, chunked-upload packet layout, clock-face
-JSON frames, photo/media payload headers, zstd compression (including a
-real compress-then-decompress round-trip), and image resize/crop math.
-No Bluetooth connection or physical device is needed. SwiftUI views and
-anything Bluetooth/hardware-facing aren't covered by this suite and still
-need manual testing against a real MiniToo. CI runs this same command on
-every push to `main` and blocks the release build on a failure.
+Those tests do not exercise Bluetooth hardware. A hardware-affecting feature
+is only considered confirmed after direct observation on a physical MiniToo.
 
-## Installing a release build
+## Developer tools
 
-Download and open `Divoom-MiniToo-macos-universal.dmg`, then drag **Divoom
-MiniToo.app** into Applications. Releases are currently ad-hoc signed and not
-notarized. The shortest first-launch path is the two-line Terminal command in
-[INSTALLING.md](INSTALLING.md), which removes quarantine from this app only and
-opens it. If the user prefers not to use Terminal, try opening the app once,
-then use **System Settings → Privacy & Security → Open Anyway** (the button
-appears for about an hour) and confirm **Open**. Bluetooth permission is
-requested by macOS when needed.
+The daemon listens locally on `127.0.0.1:40583`. The repository also retains
+Python command-line tools for development and protocol work; they are not
+bundled in the app. See [PROTOCOL.md](PROTOCOL.md) for packet framing and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled dependencies.
 
-The DMG opens in an icon view with the app and installation guide centered in
-the two reserved panels of its pixel-art background.
-
-### Updates
-
-Updater-enabled releases ask once on their first normal launch whether to
-check automatically for updates. Updates remain locked to the repository and
-branch/channel embedded in that build—for example, a `main` build checks only
-the Main feed, never a generic GitHub "latest" release. Preferences
-shows the exact source repository, branch, channel, commit, and build number,
-and provides a manual **Check for Updates…** action.
-
-While releases are ad-hoc signed, a chosen update presents a visible,
-default-checked option to remove quarantine from the already-verified update
-bundle before relaunch. It affects that app bundle only and does not disable
-Gatekeeper globally. The option will go away once releases are Developer ID
-signed and notarized. **Tested current behavior:** Gatekeeper clearance is
-needed only for the initial DMG install; subsequent verified in-app updates
-launch without another Gatekeeper step.
-
-The accompanying FFmpeg source archive and [third-party notices](THIRD_PARTY_NOTICES.md)
-are included for the bundled video converter.
-
-Logs and generated packet artifacts are written under:
+Logs and generated packet artifacts live in:
 
 ```text
-~/Library/Application Support/DivoomMiniToo/
+~/Library/Application Support/MiniTooToolbox/
 ```
 
-The app icon lives at `assets/AppIcon.icns` and is copied into the bundle
-by the build script (`CFBundleIconFile` in `Info.plist`). Source art is
-`assets/AppIcon-source.png` — bold, high-contrast line art with a solid
-black glyph works far better than fine detail once scaled down to 16-32pt
-(thin outlines and busy detail disappear at that size; a solid dark shape
-is what actually survives). The content is centered on the 1024x1024
-canvas filling ~90% of the frame — margin much wider than that measurably
-hurts legibility at small sizes without buying anything back.
+## Known limitations
 
-To regenerate after changing the source art:
+- Device settings are last-sent values, not a device readback.
+- Clock sync is one-way; the MiniToo clock cannot be read from the app.
+- The device's own on-screen settings view may display stale text until you
+  leave and re-enter that device menu.
+- A control service cannot prove that macOS audio is playing, or reveal which
+  other host may own a Bluetooth profile.
+- The protocol is unofficial. Never transmit a new opcode without following
+  the capture-first safety process in [PROTOCOL.md](PROTOCOL.md).
 
-```bash
-python3 -c "
-from PIL import Image
-content = Image.open('assets/AppIcon-source.png').convert('RGB')
-cw, ch = content.size
-canvas = 1024
-target_h = int(canvas * 0.90)          # tune this fill ratio if needed
-scale = target_h / ch
-target_w = int(cw * scale)
-resized = content.resize((target_w, target_h), Image.LANCZOS)
-square = Image.new('RGB', (canvas, canvas), 'white')
-square.paste(resized, ((canvas - target_w)//2, (canvas - target_h)//2))
-square.save('/tmp/icon.png')
-"
-mkdir -p /tmp/AppIcon.iconset
-for spec in "16:icon_16x16.png" "32:icon_16x16@2x.png" "32:icon_32x32.png" "64:icon_32x32@2x.png" \
-            "128:icon_128x128.png" "256:icon_128x128@2x.png" "256:icon_256x256.png" \
-            "512:icon_256x256@2x.png" "512:icon_512x512.png" "1024:icon_512x512@2x.png"; do
-  sips -z "${spec%%:*}" "${spec%%:*}" -s format png /tmp/icon.png --out "/tmp/AppIcon.iconset/${spec##*:}"
-done
-iconutil -c icns /tmp/AppIcon.iconset -o assets/AppIcon.icns
-```
+## License and provenance
 
-(`AppIcon-source.png` should already be a tightly-trimmed, white-background
-image with no extra margin baked in — the script above adds all the
-margin. `iconutil` also requires the input directory to literally be named
-`*.iconset`, not just any folder — it fails silently with "Invalid
-Iconset" otherwise.)
-
-## macOS app and menu bar
-
-By default, Divoom MiniToo behaves like a normal macOS application: it appears
-in the Dock, opens Control Center at launch, and has the standard app, File,
-Edit, View, Window, and Help menus. Its menu-bar item remains available for
-quick controls. In **Preferences… → App Behavior**, choose **Mostly background
-menu bar app** to return to the quieter, menu-bar-focused experience.
-
-The menu-bar diamond summarizes the user-visible connection state: outline
-means no MiniToo Bluetooth link, half-filled means partial/checking, and filled
-means Bluetooth, local audio routing, and end-to-end device control are ready.
-Bluetooth-off uses an explicit `×` state instead. The menu lists those layers
-separately when they need diagnosis; it does not expose a redundant daemon row
-in the ready state.
-
-Useful actions:
-
-- **Start Control Service (currently stopped)** — appears only when it can
-  resolve that state.
-- **Retry Control Service** — appears only for a running but unhealthy service.
-- **Debugging Tools** — contains Stop/Restart Control Service, the explicit
-  Bluetooth-reset recovery, logs, captures, and any non-routine latest status.
-
-## CLI usage
-
-Start the daemon manually:
-
-```bash
-tools/divoom-daemon B1:21:81:B1:F0:84 1 40583
-```
-
-Send media through the daemon:
-
-```bash
-.venv/bin/python tools/divoom_send.py path/to/image.png
-.venv/bin/python tools/divoom_send.py path/to/animation.gif
-.venv/bin/python tools/divoom_send.py path/to/video.mp4
-```
-
-Recommended compact video/GIF profile:
-
-```bash
-.venv/bin/python tools/divoom_send.py path/to/animation.gif \
-  --size 128 \
-  --fps 8 \
-  --speed 125 \
-  --max-frames 24 \
-  --posterize-bits 4
-```
-
-Build packet files without sending:
-
-```bash
-.venv/bin/python tools/divoom_send.py path/to/media.mp4 --build-only
-```
-
-Ask the daemon to parse but not send:
-
-```bash
-.venv/bin/python tools/divoom_send.py path/to/media.mp4 --daemon-dry-run
-```
-
-## Integration API
-
-The shipped app no longer bundles Python — its own media pipeline is native
-Swift (see `tools/DivoomMediaEncode.swift`, `tools/DivoomAlbumEncode.swift`).
-For scripting/integration from outside the app, use the repo's standalone
-`divoom_send.py` as a subprocess instead. It is the media-level API:
-
-```text
-image/GIF/video -> Divoom packets -> daemon -> Bluetooth
-```
-
-Example (from a checkout of this repo, with the dev virtualenv set up per
-"Requirements" above):
-
-```bash
-.venv/bin/python tools/divoom_send.py \
-  "/absolute/path/to/file.gif" \
-  --size 128 --fps 8 --speed 125 --max-frames 24 --posterize-bits 4
-```
-
-The daemon itself is packet-level. It listens on:
-
-```text
-127.0.0.1:40583
-```
-
-It accepts JSON pointing to a prebuilt length-prefixed packet file:
-
-```json
-{
-  "packets": "/absolute/path/to/file-packets-lenpref.bin",
-  "delay": 0.012,
-  "dryRun": false
-}
-```
-
-Python example:
-
-```python
-import json
-import socket
-
-req = {
-    "packets": "/absolute/path/to/file-packets-lenpref.bin",
-    "delay": 0.012,
-    "dryRun": False,
-}
-
-with socket.create_connection(("127.0.0.1", 40583), timeout=10) as s:
-    s.sendall(json.dumps(req).encode() + b"\n")
-    s.shutdown(socket.SHUT_WR)
-    print(s.recv(65536).decode())
-```
-
-Typical success response:
-
-```json
-{"ok":true,"message":"sent","packets":457,"bytes":122949,"sawRequest":true,"sawAck":true}
-```
-
-## Protocol notes
-
-Full reverse-engineering notes are in [`PROTOCOL.md`](PROTOCOL.md).
-
-High-level transport:
-
-```text
-01 <declared_len_le16> <cmd> <body...> <checksum_le16> 02
-```
-
-Animation/photo command:
-
-```text
-0x8b = SPP_APP_NEW_GIF_CMD2020
-```
-
-Media payloads are RGB888 frames compressed with Zstandard and wrapped in Divoom `0x8b` start/chunk packets.
-
-Important finding:
-
-```text
-zstd window_log=17
-```
-
-This matches Android captures and avoids black/glitched output seen with larger zstd windows.
-
-## Repository layout
-
-```text
-PROTOCOL.md                  Reverse-engineering and validation notes
-tools/DivoomDaemon.swift     Swift RFCOMM daemon
-tools/DivoomMenuBar.swift    macOS menu-bar controller
-tools/divoom_send.py         Preferred media send CLI
-tools/send_divoom_image.py   Image/GIF/video conversion + packet builder
-tools/divoom_clock.py        Custom face selection helper
-tools/build-divoom-app.sh    Builds packaged macOS app
-assets/AppIcon.icns          App bundle icon (built into every .app by build-divoom-app.sh)
-assets/AppIcon-source.jpg    Source artwork the icon was generated from
-omo-slim/                    Local test/media assets; not core project API
-```
-
-## Troubleshooting
-
-If device control remains unavailable after the one automatic launch recovery,
-use **Debugging Tools → Disconnect MiniToo Bluetooth + Retry Control
-Service…**. This can interrupt audio; use it as a recovery action, not as a
-normal connection step.
-
-If a send reports `sent but final ACK not observed`, the device may still have updated successfully. This is usually an ACK-observation issue, not necessarily a failed transfer.
-
-If video/GIF transfer is too slow, reduce frames before reducing pixels:
-
-```bash
---size 128 --fps 6 --speed 167 --max-frames 18 --posterize-bits 4
-```
-
-Keep `--zstd-window-log 17` unless deliberately testing protocol behavior.
-
-Hearing two Bluetooth connect chimes when the daemon starts is cosmetic: RFCOMM connects first, then macOS separately auto-restores the A2DP audio profile a couple seconds later. Not a bug.
-
-After changing a setting under Control Center's "Device Settings" screen (notification sound, temperature unit, date format, clock format, Bluetooth auto-reconnect, remember-power-on-volume, auto power off), the MiniToo's own on-screen settings menu can keep showing the *old* value if you're already sitting on that menu when the change is sent. This is a MiniToo firmware quirk, not a bug in this app or a failed send — the setting takes effect immediately either way. Back out of that menu and go back in on the device to see it redraw with the current value.
+The project is in a licensing/provenance transition. Upstream attribution and
+third-party notices remain in place. A planned clean-room replacement process
+is documented privately; this README does not claim that inherited work has
+already been relicensed or replaced.

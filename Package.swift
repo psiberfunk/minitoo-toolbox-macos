@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "DivoomMiniToo",
+    name: "MiniTooToolbox",
     platforms: [.macOS(.v12)],
     products: [
-        .executable(name: "DivoomMiniToo", targets: ["DivoomMiniToo"]),
+        .executable(name: "MiniTooToolbox", targets: ["MiniTooToolbox"]),
         .executable(name: "DivoomDaemon", targets: ["DivoomDaemon"]),
     ],
     dependencies: [
@@ -15,7 +15,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "DivoomMiniToo",
+            name: "MiniTooToolbox",
             dependencies: [
                 "CZstd",
                 .product(name: "Sparkle", package: "Sparkle"),
@@ -38,6 +38,7 @@ let package = Package(
                 "DivoomAudioRoute.swift",
                 "DivoomBuildInfo.swift",
                 "DivoomUpdateController.swift",
+                "MiniTooToolboxIdentity.swift",
                 "DivoomZstd.swift",
                 "DivoomClockFrame.swift",
                 "DivoomChunkedUpload.swift",
@@ -88,7 +89,7 @@ let package = Package(
                 "DivoomBluetooth.swift", "DivoomAudioRoute.swift", "DivoomBuildInfo.swift", "DivoomChunkedUpload.swift", "DivoomClockFrame.swift",
                 "DivoomControlCenter.swift", "DivoomDeviceSetup.swift", "DivoomImageResize.swift", "DivoomMediaEncode.swift",
                 "DivoomMenuBar.swift", "DivoomPreferences.swift", "DivoomProcess.swift", "DivoomRFCOMM.swift",
-                "DivoomRFCOMMSend.swift", "DivoomUpdateController.swift", "DivoomZstd.swift", "build-divoom-app.sh",
+                "DivoomRFCOMMSend.swift", "DivoomUpdateController.swift", "DivoomZstd.swift", "MiniTooToolboxIdentity.swift", "build-divoom-app.sh",
                 "build-ffmpeg.sh", "build-zstd.sh", "dmgbuild-settings.py", "divoom-daemon", "divoom-menubar",
                 "divoom_album.py", "divoom_atmosphere.py", "divoom_clock.py", "divoom_device_settings.py",
                 "divoom_display.py", "divoom_send.py", "divoom_whitenoise.py", "parse_divoom_spp.py",
@@ -102,11 +103,11 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "DivoomMiniTooTests",
+            name: "MiniTooToolboxTests",
             // CZstd is a direct dependency here (not just transitive via
             // DivoomMiniToo) so tests can call ZSTD_decompress directly --
             // production code never needs to decompress, only tests do.
-            dependencies: ["DivoomMiniToo", "CZstd"]
+            dependencies: ["MiniTooToolbox", "CZstd"]
         ),
     ],
     // Keep this existing AppKit codebase on the same language-mode behavior

@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import DivoomMiniToo
+@testable import MiniTooToolbox
 
 struct DivoomMediaEncodeTests {
     @Test func acceptsFullPanelDimensions() throws {

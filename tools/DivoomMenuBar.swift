@@ -209,6 +209,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     override init() {
         let fm = FileManager.default
+        MiniTooToolboxIdentity.migrateUserDataIfNeeded(fileManager: fm)
         let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
         let resources = Bundle.main.resourceURL
         let bundledTools = resources?.appendingPathComponent("tools")
@@ -220,7 +221,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.toolRoot = cwd.appendingPathComponent("tools")
         }
         let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? cwd
-        self.supportDir = appSupport.appendingPathComponent("DivoomMiniToo", isDirectory: true)
+        self.supportDir = appSupport.appendingPathComponent(MiniTooToolboxIdentity.supportDirectoryName, isDirectory: true)
         super.init()
         try? fm.createDirectory(at: supportDir, withIntermediateDirectories: true)
         try? fm.createDirectory(at: capturesDir, withIntermediateDirectories: true)

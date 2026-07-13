@@ -44,7 +44,7 @@ final class DivoomUpdateController: NSObject, SPUUpdaterDelegate {
         }
 
         let alert = NSAlert()
-        alert.messageText = "Keep Divoom MiniToo up to date?"
+        alert.messageText = "Keep MiniToo Toolbox up to date?"
         alert.informativeText = "This app checks only the \(DivoomBuildInfo.updateChannel) channel from \(DivoomBuildInfo.sourceRepository). You can change this later in Preferences."
         alert.addButton(withTitle: "Enable Automatic Updates")
         alert.addButton(withTitle: "Not Now")

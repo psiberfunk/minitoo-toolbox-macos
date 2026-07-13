@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import DivoomMiniToo
+@testable import MiniTooToolbox
 
 struct DivoomAlbumEncodeTests {
     /// Matches PROTOCOL.md's documented photo blob layout (0x1F marker, frame

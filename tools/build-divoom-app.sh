@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOLS="$ROOT/tools"
 BUILD="$ROOT/build"
 SWIFT_BUILD="$BUILD/swiftpm"
-APP="$BUILD/Divoom MiniToo.app"
+APP="$BUILD/MiniToo Toolbox.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
@@ -19,7 +19,7 @@ ARCHS="${DIVOOM_ARCHS:-$(uname -m)}"
 LOCAL_BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
 APP_VERSION="${DIVOOM_APP_VERSION:-0.1.0-alpha.local}"
 BUILD_VERSION="${DIVOOM_BUILD_VERSION:-$LOCAL_BUILD_NUMBER}"
-SOURCE_REPOSITORY="${DIVOOM_SOURCE_REPOSITORY:-psiberfunk/divoom-minitoo-osx}"
+SOURCE_REPOSITORY="${DIVOOM_SOURCE_REPOSITORY:-psiberfunk/minitoo-toolbox-macos}"
 SOURCE_BRANCH="${DIVOOM_SOURCE_BRANCH:-$(git -C "$ROOT" branch --show-current 2>/dev/null || echo local)}"
 UPDATE_CHANNEL="${DIVOOM_UPDATE_CHANNEL:-$SOURCE_BRANCH}"
 UPDATE_FEED_URL="${DIVOOM_UPDATE_FEED_URL:-}"
@@ -39,11 +39,11 @@ for ARCH in $ARCHS; do
 
   SCRATCH="$SWIFT_BUILD/$ARCH"
   echo "Building Swift Package menu-bar app ($ARCH)..."
-  swift build --scratch-path "$SCRATCH" --configuration release --arch "$ARCH" --product DivoomMiniToo
+  swift build --scratch-path "$SCRATCH" --configuration release --arch "$ARCH" --product MiniTooToolbox
   echo "Building Swift Package daemon ($ARCH)..."
   swift build --scratch-path "$SCRATCH" --configuration release --arch "$ARCH" --product DivoomDaemon
   BIN_PATH="$(swift build --scratch-path "$SCRATCH" --configuration release --arch "$ARCH" --show-bin-path)"
-  cp "$BIN_PATH/DivoomMiniToo" "$BUILD/divoom-menubar-$ARCH"
+  cp "$BIN_PATH/MiniTooToolbox" "$BUILD/minitoo-toolbox-$ARCH"
   cp "$BIN_PATH/DivoomDaemon" "$BUILD/divoom-daemon-$ARCH"
   if [[ ! -d "$BUILD/Sparkle.framework" ]]; then
     ditto "$BIN_PATH/Sparkle.framework" "$BUILD/Sparkle.framework"
@@ -64,19 +64,19 @@ daemon_slices=()
 menubar_slices=()
 for ARCH in $ARCHS; do
   daemon_slices+=("$BUILD/divoom-daemon-$ARCH")
-  menubar_slices+=("$BUILD/divoom-menubar-$ARCH")
+  menubar_slices+=("$BUILD/minitoo-toolbox-$ARCH")
 done
 build_universal_binary "$BUILD/divoom-daemon" "${daemon_slices[@]}"
-build_universal_binary "$BUILD/divoom-menubar" "${menubar_slices[@]}"
+build_universal_binary "$BUILD/minitoo-toolbox" "${menubar_slices[@]}"
 # Keep the documented developer CLI paths current as well as the app bundle.
 cp "$BUILD/divoom-daemon" "$TOOLS/divoom-daemon"
-cp "$BUILD/divoom-menubar" "$TOOLS/divoom-menubar"
+cp "$BUILD/minitoo-toolbox" "$TOOLS/minitoo-toolbox"
 
 echo "Packaging $APP..."
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES/tools" "$CONTENTS/Frameworks"
 
-cp "$BUILD/divoom-menubar" "$MACOS/DivoomMiniToo"
+cp "$BUILD/minitoo-toolbox" "$MACOS/MiniTooToolbox"
 cp "$BUILD/divoom-daemon" "$RESOURCES/tools/divoom-daemon"
 ditto "$BUILD/Sparkle.framework" "$CONTENTS/Frameworks/Sparkle.framework"
 cp "$ROOT/PROTOCOL.md" "$RESOURCES/PROTOCOL.md"
@@ -85,7 +85,7 @@ if [[ -x "$BUILD/ffmpeg/ffmpeg" ]]; then
   cp "$BUILD/ffmpeg/ffmpeg" "$RESOURCES/tools/ffmpeg"
   chmod +x "$RESOURCES/tools/ffmpeg"
 fi
-chmod +x "$MACOS/DivoomMiniToo" "$RESOURCES/tools/divoom-daemon"
+chmod +x "$MACOS/MiniTooToolbox" "$RESOURCES/tools/divoom-daemon"
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -95,17 +95,17 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>
-  <string>DivoomMiniToo</string>
+  <string>MiniTooToolbox</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
-  <string>local.divoom.minitoo</string>
+  <string>io.github.psiberfunk.minitootoolbox</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Divoom MiniToo</string>
+  <string>MiniToo Toolbox</string>
   <key>CFBundleDisplayName</key>
-  <string>Divoom MiniToo</string>
+  <string>MiniToo Toolbox</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -145,7 +145,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>LSUIElement</key>
   <false/>
   <key>NSBluetoothAlwaysUsageDescription</key>
-  <string>Divoom MiniToo opens a Bluetooth RFCOMM channel to send images to the display.</string>
+  <string>MiniToo Toolbox opens a Bluetooth RFCOMM channel to control a Divoom MiniToo.</string>
 </dict>
 </plist>
 PLIST

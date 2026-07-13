@@ -10,10 +10,10 @@ from pathlib import Path
 # dmgbuild executes settings files without defining ``__file__``. Both local
 # verification and release CI invoke it from the repository root.
 ROOT = Path.cwd()
-APP = ROOT / "Divoom MiniToo.app"
+APP = ROOT / "MiniToo Toolbox.app"
 if not APP.is_dir():
     # This makes local verification convenient; release CI assembles at ROOT.
-    APP = ROOT / "build" / "Divoom MiniToo.app"
+    APP = ROOT / "build" / "MiniToo Toolbox.app"
 
 files = [str(APP), str(ROOT / "INSTALLING.md")]
 format = "UDZO"
@@ -47,7 +47,7 @@ arrange_by = None
 icon_size = 112
 text_size = 13
 icon_locations = {
-    "Divoom MiniToo.app": (195, 258),
+    "MiniToo Toolbox.app": (195, 258),
     "INSTALLING.md": (597, 258),
     # dmgbuild names the compiled HiDPI background ".background.tiff" and
     # relies on the leading dot plus the `hide` setting below (SetFile -a V,

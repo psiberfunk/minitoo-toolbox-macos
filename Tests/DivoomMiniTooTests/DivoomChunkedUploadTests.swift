@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import DivoomMiniToo
+@testable import MiniTooToolbox
 
 /// Expected packets are built via DivoomRawFrame.build itself (the same
 /// envelope function it's built with in production, already covered

@@ -3,7 +3,7 @@ import Foundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
-@testable import DivoomMiniToo
+@testable import MiniTooToolbox
 
 private func solidColorImage(width: Int, height: Int, r: UInt8, g: UInt8, b: UInt8) -> CGImage {
     var pixels = [UInt8](repeating: 0, count: width * height * 4)

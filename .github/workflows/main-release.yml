@@ -1,4 +1,4 @@
-name: Build main macOS app
+name: Build MiniToo Toolbox for macOS
 
 on:
   push:
@@ -106,11 +106,11 @@ jobs:
       - name: Archive native app slice
         run: |
           ditto -c -k --sequesterRsrc --keepParent \
-            "build/Divoom MiniToo.app" "Divoom-MiniToo-${{ matrix.arch }}.zip"
+            "build/MiniToo Toolbox.app" "MiniToo-Toolbox-${{ matrix.arch }}.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: Divoom-MiniToo-${{ matrix.arch }}
-          path: Divoom-MiniToo-${{ matrix.arch }}.zip
+          name: MiniToo-Toolbox-${{ matrix.arch }}
+          path: MiniToo-Toolbox-${{ matrix.arch }}.zip
           retention-days: 30
       - uses: actions/upload-artifact@v4
         if: matrix.arch == 'arm64'
@@ -137,11 +137,11 @@ jobs:
         run: swift package resolve
       - uses: actions/download-artifact@v5
         with:
-          name: Divoom-MiniToo-arm64
+          name: MiniToo-Toolbox-arm64
           path: arm64
       - uses: actions/download-artifact@v5
         with:
-          name: Divoom-MiniToo-x86_64
+          name: MiniToo-Toolbox-x86_64
           path: x86_64
       - uses: actions/download-artifact@v5
         with:
@@ -153,27 +153,27 @@ jobs:
           VERSION_PREFIX: ${{ inputs.release_channel == 'personal-transition' && '0.1.0-alpha' || '0.2.0-alpha' }}
           DIVOOM_SPARKLE_PRIVATE_KEY: ${{ secrets.DIVOOM_SPARKLE_PRIVATE_KEY }}
         run: |
-          ditto -x -k arm64/Divoom-MiniToo-arm64.zip .
-          mv "Divoom MiniToo.app" arm64.app
-          ditto -x -k x86_64/Divoom-MiniToo-x86_64.zip .
+          ditto -x -k arm64/MiniToo-Toolbox-arm64.zip .
+          mv "MiniToo Toolbox.app" arm64.app
+          ditto -x -k x86_64/MiniToo-Toolbox-x86_64.zip .
           lipo -create \
-            "arm64.app/Contents/MacOS/DivoomMiniToo" \
-            "Divoom MiniToo.app/Contents/MacOS/DivoomMiniToo" \
-            -output "Divoom MiniToo.app/Contents/MacOS/DivoomMiniToo"
+            "arm64.app/Contents/MacOS/MiniTooToolbox" \
+            "MiniToo Toolbox.app/Contents/MacOS/MiniTooToolbox" \
+            -output "MiniToo Toolbox.app/Contents/MacOS/MiniTooToolbox"
           lipo -create \
             "arm64.app/Contents/Resources/tools/divoom-daemon" \
-            "Divoom MiniToo.app/Contents/Resources/tools/divoom-daemon" \
-            -output "Divoom MiniToo.app/Contents/Resources/tools/divoom-daemon"
+            "MiniToo Toolbox.app/Contents/Resources/tools/divoom-daemon" \
+            -output "MiniToo Toolbox.app/Contents/Resources/tools/divoom-daemon"
           lipo -create \
             "arm64.app/Contents/Resources/tools/ffmpeg" \
-            "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg" \
-            -output "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg"
-          codesign --force --deep --sign - "Divoom MiniToo.app"
+            "MiniToo Toolbox.app/Contents/Resources/tools/ffmpeg" \
+            -output "MiniToo Toolbox.app/Contents/Resources/tools/ffmpeg"
+          codesign --force --deep --sign - "MiniToo Toolbox.app"
           UPDATE_TAG="${CHANNEL}-update-${GITHUB_RUN_NUMBER}"
-          UPDATE_NAME="Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip"
+          UPDATE_NAME="MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.zip"
           UPDATE_DIR="update-feed"
           mkdir -p "$UPDATE_DIR"
-          ditto -c -k --sequesterRsrc --keepParent "Divoom MiniToo.app" "$UPDATE_DIR/$UPDATE_NAME"
+          ditto -c -k --sequesterRsrc --keepParent "MiniToo Toolbox.app" "$UPDATE_DIR/$UPDATE_NAME"
           cp RELEASE_NOTES.md "$UPDATE_DIR/${UPDATE_NAME%.zip}.md"
           printf '%s' "$DIVOOM_SPARKLE_PRIVATE_KEY" | \
             .build/artifacts/sparkle/Sparkle/bin/generate_appcast \
@@ -185,16 +185,16 @@ jobs:
               --full-release-notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${CHANNEL}-latest" \
               -o "$UPDATE_DIR/appcast-${CHANNEL}.xml" \
               "$UPDATE_DIR"
-          dmgbuild -s tools/dmgbuild-settings.py "Divoom MiniToo" Divoom-MiniToo-macos-universal.dmg
-          shasum -a 256 Divoom-MiniToo-macos-universal.dmg > Divoom-MiniToo-macos-universal.dmg.sha256
+          dmgbuild -s tools/dmgbuild-settings.py "MiniToo Toolbox" MiniToo-Toolbox-macos-universal.dmg
+          shasum -a 256 MiniToo-Toolbox-macos-universal.dmg > MiniToo-Toolbox-macos-universal.dmg.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: Divoom-MiniToo-macos-universal
+          name: MiniToo-Toolbox-macos-universal
           path: |
-            Divoom-MiniToo-macos-universal.dmg
-            Divoom-MiniToo-macos-universal.dmg.sha256
-            update-feed/Divoom-MiniToo-macos-universal-update-${{ github.run_number }}.zip
-            update-feed/Divoom-MiniToo-macos-universal-update-${{ github.run_number }}.md
+            MiniToo-Toolbox-macos-universal.dmg
+            MiniToo-Toolbox-macos-universal.dmg.sha256
+            update-feed/MiniToo-Toolbox-macos-universal-update-${{ github.run_number }}.zip
+            update-feed/MiniToo-Toolbox-macos-universal-update-${{ github.run_number }}.md
             update-feed/appcast-${{ inputs.release_channel == 'personal-transition' && 'personal' || 'main' }}.xml
             ffmpeg-source/ffmpeg-8.1.2.tar.xz
           retention-days: 7
@@ -206,25 +206,25 @@ jobs:
         run: |
           UPDATE_TAG="${CHANNEL}-update-${GITHUB_RUN_NUMBER}"
           if gh release view "$UPDATE_TAG" >/dev/null 2>&1; then
-            gh release upload "$UPDATE_TAG" "update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --clobber
+            gh release upload "$UPDATE_TAG" "update-feed/MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --clobber
           else
-            gh release create "$UPDATE_TAG" "update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --target "$GITHUB_SHA" --title "${CHANNEL} update ${GITHUB_RUN_NUMBER}" --prerelease --notes "Immutable Sparkle update archive for the ${CHANNEL} channel."
+            gh release create "$UPDATE_TAG" "update-feed/MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --target "$GITHUB_SHA" --title "${CHANNEL} update ${GITHUB_RUN_NUMBER}" --prerelease --notes "Immutable Sparkle update archive for the ${CHANNEL} channel."
           fi
           if gh release view "${CHANNEL}-latest" >/dev/null 2>&1; then
             # The user-facing artifact changed from ZIP to DMG. Remove stale
             # ZIP assets so each rolling release has one unambiguous download.
-            for stale_asset in Divoom-MiniToo-macos-universal.zip Divoom-MiniToo-macos-universal.zip.sha256; do
+            for stale_asset in MiniToo-Toolbox-macos-universal.zip MiniToo-Toolbox-macos-universal.zip.sha256; do
               gh release delete-asset "${CHANNEL}-latest" "$stale_asset" --yes || true
             done
             gh release view "${CHANNEL}-latest" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
-              if [[ "$asset" == Divoom-MiniToo-macos-universal-update-*.md && "$asset" != "Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md" ]]; then
+              if [[ "$asset" == MiniToo-Toolbox-macos-universal-update-*.md && "$asset" != "MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.md" ]]; then
                 gh release delete-asset "${CHANNEL}-latest" "$asset" --yes
               fi
             done
-            gh release upload "${CHANNEL}-latest" Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md "update-feed/appcast-${CHANNEL}.xml" ffmpeg-source/ffmpeg-8.1.2.tar.xz --clobber
-            gh release edit "${CHANNEL}-latest" --title "Divoom MiniToo ${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
+            gh release upload "${CHANNEL}-latest" MiniToo-Toolbox-macos-universal.dmg MiniToo-Toolbox-macos-universal.dmg.sha256 update-feed/MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.md "update-feed/appcast-${CHANNEL}.xml" ffmpeg-source/ffmpeg-8.1.2.tar.xz --clobber
+            gh release edit "${CHANNEL}-latest" --title "MiniToo Toolbox ${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
           else
-            gh release create "${CHANNEL}-latest" Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md "update-feed/appcast-${CHANNEL}.xml" ffmpeg-source/ffmpeg-8.1.2.tar.xz --title "Divoom MiniToo ${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
+            gh release create "${CHANNEL}-latest" MiniToo-Toolbox-macos-universal.dmg MiniToo-Toolbox-macos-universal.dmg.sha256 update-feed/MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.md "update-feed/appcast-${CHANNEL}.xml" ffmpeg-source/ffmpeg-8.1.2.tar.xz --title "MiniToo Toolbox ${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
           fi
           count=0
           gh release list --limit 100 --json tagName --jq ".[] | select(.tagName | startswith(\"${CHANNEL}-update-\")) | .tagName" | while IFS= read -r tag; do
