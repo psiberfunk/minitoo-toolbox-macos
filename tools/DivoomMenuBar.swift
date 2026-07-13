@@ -138,8 +138,9 @@ enum DivoomStatusGlyph {
 }
 
 final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    var statusItem: NSStatusItem?
     let menu = NSMenu()
+    let appControlsMenu = NSMenu(title: "MiniToo")
     let repo: URL
     let toolRoot: URL
     let supportDir: URL
@@ -222,17 +223,142 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         try? fm.createDirectory(at: capturesDir, withIntermediateDirectories: true)
     }
 
-    // Persisted separately from Info.plist's LSUIElement (which only sets
-    // the policy at first launch) — NSApp.setActivationPolicy can be changed
-    // at any time afterward, which is what lets this be a live user toggle
-    // instead of a build-time/Info.plist setting.
-    var showDockIcon: Bool {
-        get { UserDefaults.standard.bool(forKey: "ShowDockIcon") }
-        set { UserDefaults.standard.set(newValue, forKey: "ShowDockIcon") }
+    enum PresentationMode: String {
+        case normalApp
+        case menuBarOnly
+
+        var isNormalApp: Bool { self == .normalApp }
     }
 
-    func applyDockIconPolicy() {
-        NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
+    private static let presentationModeKey = "AppPresentationMode"
+    private static let legacyShowDockIconKey = "ShowDockIcon"
+    private static let showMenuBarItemKey = "ShowMenuBarItem"
+
+    /// New installations are conventional macOS apps.  Respect the old
+    /// Dock-icon setting when upgrading so a user who deliberately chose the
+    /// menu-bar-only experience is not silently moved into the Dock.
+    var presentationMode: PresentationMode {
+        get {
+            let defaults = UserDefaults.standard
+            if let rawValue = defaults.string(forKey: Self.presentationModeKey),
+               let mode = PresentationMode(rawValue: rawValue) {
+                return mode
+            }
+            if defaults.object(forKey: Self.legacyShowDockIconKey) != nil {
+                return defaults.bool(forKey: Self.legacyShowDockIconKey) ? .normalApp : .menuBarOnly
+            }
+            return .normalApp
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: Self.presentationModeKey)
+        }
+    }
+
+    func applyPresentationMode() {
+        NSApp.setActivationPolicy(presentationMode.isNormalApp ? .regular : .accessory)
+    }
+
+    /// The regular app menu is a complete alternative to this item, so users
+    /// who prefer a quieter menu bar can remove it without losing controls.
+    /// It remains required for the menu-bar-only presentation, which would
+    /// otherwise leave the running app with no visible way back in.
+    var showsMenuBarItem: Bool {
+        get {
+            let defaults = UserDefaults.standard
+            return defaults.object(forKey: Self.showMenuBarItemKey) == nil || defaults.bool(forKey: Self.showMenuBarItemKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Self.showMenuBarItemKey) }
+    }
+
+    func applyMenuBarItemVisibility() {
+        let shouldShow = showsMenuBarItem || !presentationMode.isNormalApp
+        if shouldShow, statusItem == nil {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.menu = menu
+            statusItem = item
+            refreshTitle()
+        } else if !shouldShow, let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
+
+    func configureMainMenu() {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Divoom MiniToo")
+        appMenu.addItem(item("About Divoom MiniToo", #selector(showAboutPanel)))
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(applicationItem("Hide Divoom MiniToo", #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
+        let hideOthers = applicationItem("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthers)
+        appMenu.addItem(applicationItem("Show All", #selector(NSApplication.unhideAllApplications(_:))))
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(item("Quit Divoom MiniToo", #selector(quit), keyEquivalent: "q"))
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(responderItem("Close Window", #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(responderItem("Undo", #selector(UndoManager.undo), keyEquivalent: "z"))
+        let redo = responderItem("Redo", #selector(UndoManager.redo), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redo)
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(responderItem("Cut", #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(responderItem("Copy", #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(responderItem("Paste", #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(responderItem("Select All", #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        let viewMenuItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "View")
+        viewMenu.addItem(item("Show Control Center", #selector(openControlCenter), keyEquivalent: "1"))
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
+        let controlsMenuItem = NSMenuItem(title: "MiniToo", action: nil, keyEquivalent: "")
+        controlsMenuItem.submenu = appControlsMenu
+        mainMenu.addItem(controlsMenuItem)
+
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(responderItem("Minimize", #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m"))
+        windowMenu.addItem(responderItem("Zoom", #selector(NSWindow.performZoom(_:))))
+        windowMenu.addItem(NSMenuItem.separator())
+        windowMenu.addItem(applicationItem("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
+
+        let helpMenuItem = NSMenuItem()
+        helpMenuItem.submenu = NSMenu(title: "Help")
+        mainMenu.addItem(helpMenuItem)
+        NSApp.helpMenu = helpMenuItem.submenu
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    @objc func showAboutPanel() {
+        // Standard About panels normally show CFBundleVersion alone in
+        // parentheses. Supply the same human-facing build label used by
+        // Preferences so the commit cannot disappear from this surface.
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: "Divoom MiniToo",
+            .applicationVersion: DivoomBuildInfo.version,
+            .version: "\(DivoomBuildInfo.buildDescription) · \(DivoomBuildInfo.commit)",
+        ])
     }
 
     // Standard Dock-icon-click hook: if the user shows the Dock icon and
@@ -247,12 +373,14 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        applyDockIconPolicy()
+        applyPresentationMode()
+        configureMainMenu()
+        appControlsMenu.delegate = self
+        applyMenuBarItemVisibility()
         appendLog("menubar started repo=\(repo.path)")
-        statusItem.button?.title = "◈ Divoom"
+        statusItem?.button?.title = "◈ Divoom"
         menu.delegate = self
         rebuildMenu()
-        statusItem.menu = menu
         statusItemViewTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.refreshTitle()
         }
@@ -279,6 +407,14 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 batteryMonitor.start(usePrivateAPI: UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI"))
             }
             return
+        }
+
+        if presentationMode.isNormalApp {
+            // Defer until the app is fully active so the window reliably
+            // becomes key on a fresh LaunchServices launch.
+            DispatchQueue.main.async { [weak self] in
+                self?.openControlCenter()
+            }
         }
 
         // Don't blindly disconnect+restart on every launch: if a daemon from a
@@ -312,8 +448,8 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else if !DivoomBluetooth.isPoweredOn() || address.isEmpty {
             // Bluetooth itself is unavailable, rather than merely an
             // incomplete MiniToo connection, so retain the explicit X.
-            statusItem.button?.image = nil
-            statusItem.button?.title = "× Divoom"
+            statusItem?.button?.image = nil
+            statusItem?.button?.title = "× Divoom"
         } else if !linked {
             setStatusTitle(glyph: .disconnected)
         } else {
@@ -322,9 +458,9 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func setStatusTitle(glyph: DivoomStatusGlyph) {
-        statusItem.button?.image = DivoomStatusGlyph.image(glyph)
-        statusItem.button?.imagePosition = .imageLeading
-        statusItem.button?.title = " Divoom"
+        statusItem?.button?.image = DivoomStatusGlyph.image(glyph)
+        statusItem?.button?.imagePosition = .imageLeading
+        statusItem?.button?.title = " Divoom"
     }
 
     /// The MAC is the device identity used for control. The human-readable
@@ -345,16 +481,24 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func rebuildMenu() {
+        rebuildControlsMenu(menu)
+        rebuildControlsMenu(appControlsMenu)
+    }
+
+    /// Used both by the optional status item and the left-aligned MiniToo
+    /// menu, so neither surface becomes a reduced or stale version of the
+    /// other.
+    func rebuildControlsMenu(_ target: NSMenu) {
         let bluetoothPoweredOn = DivoomBluetooth.isPoweredOn()
         // When Bluetooth itself is off, do not make the user parse a
         // diagnostic matrix whose remaining rows cannot be meaningful.
         if !bluetoothPoweredOn {
-            menu.removeAllItems()
-            menu.addItem(disabled("Bluetooth is turned off"))
-            menu.addItem(item("Open Bluetooth Settings…", #selector(openBluetoothSettings)))
-            menu.addItem(NSMenuItem.separator())
-            menu.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
-            menu.addItem(item("Quit", #selector(quit)))
+            target.removeAllItems()
+            target.addItem(disabled("Bluetooth is turned off"))
+            target.addItem(item("Open Bluetooth Settings…", #selector(openBluetoothSettings)))
+            target.addItem(NSMenuItem.separator())
+            target.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
+            target.addItem(item("Quit", #selector(quit)))
             return
         }
         let daemonRunning = isDaemonRunning()
@@ -375,65 +519,65 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             overall = "Partial / checking"
         }
-        menu.removeAllItems()
+        target.removeAllItems()
         // A missing MiniToo link makes the individual transport, audio, and
         // control rows both unavailable and redundant. Keep this state to two
         // plain facts rather than exposing internal implementation layers.
         if !bluetoothLinked {
-            menu.addItem(disabled("MiniToo: Not connected"))
+            target.addItem(disabled("MiniToo: Not connected"))
             if daemonRunning {
-                menu.addItem(disabled("Control service: Waiting for MiniToo"))
+                target.addItem(disabled("Control service: Waiting for MiniToo"))
             }
-            menu.addItem(NSMenuItem.separator())
-            menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
+            target.addItem(NSMenuItem.separator())
+            target.addItem(item("Open Control Center…", #selector(openControlCenter)))
             if !daemonRunning {
-                menu.addItem(item("Start Control Service (currently stopped)", #selector(startDaemonMenu)))
+                target.addItem(item("Start Control Service (currently stopped)", #selector(startDaemonMenu)))
             }
-            menu.addItem(NSMenuItem.separator())
-            menu.addItem(debuggingToolsSubmenu())
-            menu.addItem(NSMenuItem.separator())
-            menu.addItem(item("Check for Updates…", #selector(checkForUpdatesMenu), enabled: updateController.isConfigured))
-            menu.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
-            menu.addItem(item("Quit", #selector(quit)))
+            target.addItem(NSMenuItem.separator())
+            target.addItem(debuggingToolsSubmenu())
+            target.addItem(NSMenuItem.separator())
+            target.addItem(item("Check for Updates…", #selector(checkForUpdatesMenu), enabled: updateController.isConfigured))
+            target.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
+            target.addItem(item("Quit", #selector(quit)))
             return
         }
         // The filled menu-bar diamond already summarizes Ready. In that
         // state, show only the three independent user-facing layers; daemon
         // lifecycle and an aggregate "MiniToo: Ready" add no information.
         if !isReady {
-            menu.addItem(disabled("MiniToo: \(overall)"))
+            target.addItem(disabled("MiniToo: \(overall)"))
             if daemonRunning {
-                menu.addItem(disabled("Daemon: Running"))
+                target.addItem(disabled("Daemon: Running"))
             }
         }
-        menu.addItem(disabled("Bluetooth: \(bluetoothLinked ? "Connected" : "Disconnected")"))
-        menu.addItem(disabled("Audio on this Mac: \(audioRoute.label)"))
+        target.addItem(disabled("Bluetooth: \(bluetoothLinked ? "Connected" : "Disconnected")"))
+        target.addItem(disabled("Audio on this Mac: \(audioRoute.label)"))
         if daemonRunning {
-            menu.addItem(disabled("Device control: \(controlState.label)"))
+            target.addItem(disabled("Device control: \(controlState.label)"))
         }
         if batteryMonitor.isEnabled {
             let chargingSuffix = (batteryMonitor.percent != nil && !batteryMonitor.isOnBattery) ? " (charging)" : ""
             let text = (batteryMonitor.percent.map { "Battery: \($0)%" } ?? "Battery: …") + chargingSuffix
             let iconName = BatteryMonitorModel.batteryIconName(percent: batteryMonitor.percent)
-            menu.addItem(disabledBattery(text, image: NSImage(systemSymbolName: iconName, accessibilityDescription: nil)))
+            target.addItem(disabledBattery(text, image: NSImage(systemSymbolName: iconName, accessibilityDescription: nil)))
         }
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(item("Open Control Center…", #selector(openControlCenter)))
+        target.addItem(NSMenuItem.separator())
+        target.addItem(item("Open Control Center…", #selector(openControlCenter)))
         if controlState == .live {
-            menu.addItem(brightnessSliderItem(enabled: true))
+            target.addItem(brightnessSliderItem(enabled: true))
         }
-        menu.addItem(NSMenuItem.separator())
+        target.addItem(NSMenuItem.separator())
         if !daemonRunning {
-            menu.addItem(item("Start Control Service (currently stopped)", #selector(startDaemonMenu)))
+            target.addItem(item("Start Control Service (currently stopped)", #selector(startDaemonMenu)))
         } else if controlState != .live {
-            menu.addItem(item("Retry Control Service", #selector(restartDaemonMenu)))
+            target.addItem(item("Retry Control Service", #selector(restartDaemonMenu)))
         }
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(debuggingToolsSubmenu())
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(item("Check for Updates…", #selector(checkForUpdatesMenu), enabled: updateController.isConfigured))
-        menu.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
-        menu.addItem(item("Quit", #selector(quit)))
+        target.addItem(NSMenuItem.separator())
+        target.addItem(debuggingToolsSubmenu())
+        target.addItem(NSMenuItem.separator())
+        target.addItem(item("Check for Updates…", #selector(checkForUpdatesMenu), enabled: updateController.isConfigured))
+        target.addItem(item("Preferences…", #selector(openPreferences), keyEquivalent: ","))
+        target.addItem(item("Quit", #selector(quit)))
     }
 
     func debuggingToolsSubmenu() -> NSMenuItem {
@@ -463,6 +607,18 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         i.target = self
         i.isEnabled = enabled
         return i
+    }
+
+    /// AppKit's standard File/Edit/Window commands must travel through the
+    /// responder chain, unlike this controller's own menu actions.
+    func responderItem(_ title: String, _ action: Selector, keyEquivalent: String = "") -> NSMenuItem {
+        NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+    }
+
+    func applicationItem(_ title: String, _ action: Selector, keyEquivalent: String = "") -> NSMenuItem {
+        let menuItem = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        menuItem.target = NSApp
+        return menuItem
     }
 
     func disabled(_ title: String, image: NSImage? = nil) -> NSMenuItem {

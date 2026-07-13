@@ -1713,6 +1713,12 @@ struct DeviceSettingsView: View {
 }
 
 struct ControlCenterView: View {
+    /// The function grid's fixed intrinsic size: four 76-point columns,
+    /// its spacing/padding, and the controls bar above it. Starting at this
+    /// size prevents the first GeometryReader pass from feeding the window's
+    /// full proposed screen height back into its own frame.
+    static let initialGridContentSize = NSSize(width: 394, height: 581)
+
     @ObservedObject var sendModel: ControlCenterModel
     @ObservedObject var whiteNoiseModel: WhiteNoiseModel
     @ObservedObject var customFacesModel: CustomFacesModel
@@ -1886,12 +1892,11 @@ extension DivoomMenuBar {
             }
         }
         if isNewWindow {
-            // Starts at the window's minimum size — comfortably wide enough
-            // that the icon grid's very first layout pass doesn't truncate
-            // any labels — and the size-reporting content immediately
-            // corrects it to the icon grid's actual measured size a moment
-            // later.
-            controlCenterWindow?.setContentSize(controlCenterWindow?.contentMinSize ?? NSSize(width: 320, height: 150))
+            // Start at the grid's actual intrinsic size, not the tiny
+            // minimum size. A GeometryReader otherwise sees AppKit's large
+            // first proposed height and feeds that value back into the window,
+            // producing a Control Center that runs off the bottom of screen.
+            controlCenterWindow?.setContentSize(ControlCenterView.initialGridContentSize)
             controlCenterWindow?.center()
         }
         controlCenterWindow?.makeKeyAndOrderFront(nil)

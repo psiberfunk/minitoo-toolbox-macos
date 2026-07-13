@@ -12,15 +12,20 @@ RESOURCES="$CONTENTS/Resources"
 # A space-separated list lets CI build one native slice per job, while a
 # developer can make a universal app locally with DIVOOM_ARCHS="arm64 x86_64".
 ARCHS="${DIVOOM_ARCHS:-$(uname -m)}"
-APP_VERSION="${DIVOOM_APP_VERSION:-0.1.0-alpha.1}"
-BUILD_VERSION="${DIVOOM_BUILD_VERSION:-1}"
+# GitHub release builds supply their workflow run number below. A direct
+# local package is not a GitHub run, so label it honestly and give its bundle
+# a monotonically increasing source-revision number rather than pretending it
+# is always "build 1".
+LOCAL_BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
+APP_VERSION="${DIVOOM_APP_VERSION:-0.1.0-alpha.local}"
+BUILD_VERSION="${DIVOOM_BUILD_VERSION:-$LOCAL_BUILD_NUMBER}"
 SOURCE_REPOSITORY="${DIVOOM_SOURCE_REPOSITORY:-psiberfunk/divoom-minitoo-osx}"
 SOURCE_BRANCH="${DIVOOM_SOURCE_BRANCH:-$(git -C "$ROOT" branch --show-current 2>/dev/null || echo local)}"
 UPDATE_CHANNEL="${DIVOOM_UPDATE_CHANNEL:-$SOURCE_BRANCH}"
 UPDATE_FEED_URL="${DIVOOM_UPDATE_FEED_URL:-}"
 SPARKLE_PUBLIC_KEY="${DIVOOM_SPARKLE_PUBLIC_KEY:-}"
 BUILD_COMMIT="${DIVOOM_BUILD_COMMIT:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo local)}"
-BUILD_RUN="${DIVOOM_BUILD_RUN:-$BUILD_VERSION}"
+BUILD_RUN="${DIVOOM_BUILD_RUN:-local-$BUILD_VERSION}"
 
 mkdir -p "$BUILD"
 mkdir -p "$SWIFT_BUILD"
@@ -132,7 +137,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
   <key>LSUIElement</key>
-  <true/>
+  <false/>
   <key>NSBluetoothAlwaysUsageDescription</key>
   <string>Divoom MiniToo opens a Bluetooth RFCOMM channel to send images to the display.</string>
 </dict>

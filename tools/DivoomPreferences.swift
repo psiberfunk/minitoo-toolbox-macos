@@ -191,11 +191,22 @@ final class PreferencesModel: ObservableObject {
     @Published var deviceAddress: String = ""
     @Published var deviceName: String = ""
 
-    @Published var showDockIcon: Bool {
+    @Published var presentationMode: DivoomMenuBar.PresentationMode {
         didSet {
-            app.showDockIcon = showDockIcon
-            app.applyDockIconPolicy()
+            if presentationMode == .menuBarOnly && !showMenuBarItem {
+                showMenuBarItem = true
+            }
+            app.presentationMode = presentationMode
+            app.applyPresentationMode()
+            app.applyMenuBarItemVisibility()
             app.rebuildMenu()
+        }
+    }
+
+    @Published var showMenuBarItem: Bool {
+        didSet {
+            app.showsMenuBarItem = showMenuBarItem
+            app.applyMenuBarItemVisibility()
         }
     }
 
@@ -219,7 +230,8 @@ final class PreferencesModel: ObservableObject {
 
     init(app: DivoomMenuBar) {
         self.app = app
-        self.showDockIcon = app.showDockIcon
+        self.presentationMode = app.presentationMode
+        self.showMenuBarItem = app.showsMenuBarItem
         self.showBatteryStatus = UserDefaults.standard.bool(forKey: "ShowBatteryStatus")
         self.useBatteryPrivateAPI = UserDefaults.standard.bool(forKey: "UseBatteryPrivateAPI")
         self.automaticallyCheckForUpdates = app.updateController.automaticallyChecks
@@ -266,7 +278,28 @@ struct PreferencesView: View {
 
             Divider()
 
-            Toggle("Show Dock Icon", isOn: $model.showDockIcon)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("App Behavior").font(.subheadline).bold()
+                Picker("App Behavior", selection: $model.presentationMode) {
+                    Text("Normal app + menu bar").tag(DivoomMenuBar.PresentationMode.normalApp)
+                    Text("Mostly background menu bar app").tag(DivoomMenuBar.PresentationMode.menuBarOnly)
+                }
+                .pickerStyle(.radioGroup)
+                Text(model.presentationMode.isNormalApp
+                    ? "Shows in the Dock, opens Control Center on launch, and uses the standard macOS menu bar."
+                    : "Keeps running from the menu bar and stays out of the Dock; windows remain available from its menu.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Toggle("Show MiniToo menu bar item", isOn: $model.showMenuBarItem)
+                .disabled(model.presentationMode == .menuBarOnly)
+            if model.presentationMode == .menuBarOnly {
+                Text("The menu bar item stays on in this mode so the background app remains accessible.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
 
             Divider()
 
@@ -300,7 +333,7 @@ struct PreferencesView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("About & Updates").font(.subheadline).bold()
-                Text("Version \(DivoomBuildInfo.version) (build \(DivoomBuildInfo.buildRun))")
+                Text("Version \(DivoomBuildInfo.displayVersion)")
                     .font(.caption)
                 if let sourceURL = DivoomBuildInfo.sourceURL {
                     Link(DivoomBuildInfo.sourceRepository, destination: sourceURL)
@@ -308,7 +341,7 @@ struct PreferencesView: View {
                 } else {
                     Text(DivoomBuildInfo.sourceRepository).font(.caption)
                 }
-                Text("Branch: \(DivoomBuildInfo.sourceBranch) · channel: \(DivoomBuildInfo.updateChannel) · commit: \(DivoomBuildInfo.commit)")
+                Text("Branch: \(DivoomBuildInfo.sourceBranch) · channel: \(DivoomBuildInfo.updateChannel)")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Toggle("Automatically check for updates", isOn: $model.automaticallyCheckForUpdates)

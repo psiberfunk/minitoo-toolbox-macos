@@ -2,7 +2,7 @@
 
 Tools for sending images, GIFs, and short videos to a **Divoom MiniToo** over Bluetooth Classic RFCOMM from macOS.
 
-The core of this repo is a Swift daemon that keeps the Divoom app channel open, plus a small macOS menu-bar app and Python media conversion tooling.
+The core of this repo is a Swift daemon that keeps the Divoom app channel open, plus a native macOS app with both Control Center and menu-bar controls, and Python media conversion tooling.
 
 > `omo-slim/` contains local working media/assets and is not the main project API. The reusable project is the daemon, menu-bar app, CLI, and protocol notes.
 
@@ -12,7 +12,7 @@ The core of this repo is a Swift daemon that keeps the Divoom app channel open, 
 - Avoids repeated macOS Bluetooth audio reconnect/disconnect by keeping one daemon connection open.
 - Converts PNG/JPEG/GIF/MP4/video into the Divoom animation payload format.
 - Sends jobs through a localhost daemon at `127.0.0.1:40583`.
-- Provides a copyable macOS `.app` that starts the daemon from the menu bar.
+- Provides a copyable macOS `.app` that opens Control Center on launch and keeps menu-bar controls available while it runs.
 - Includes native Control Center actions for the MiniToo stopwatch (start,
   pause, reset) and its onboard noise meter (start, stop), alongside media,
   white-noise, album, atmosphere, and device-setting controls.
@@ -28,7 +28,7 @@ The device's Bluetooth MAC address is **not** hardcoded — see "First-time setu
 
 ## First-time setup
 
-The menu-bar app doesn't ship with any device's MAC address baked in. The first time it launches with no address cached yet, it opens a **"Set Up MiniToo"** window instead of starting the daemon:
+The app doesn't ship with any device's MAC address baked in. The first time it launches with no address cached yet, it opens a **"Set Up MiniToo"** window instead of starting the daemon:
 
 1. Power on the MiniToo and make sure it isn't currently connected to a phone/tablet (a Bluetooth Classic device generally only holds one active connection at a time).
 2. Click **Scan for Devices**. This runs a short native Bluetooth inquiry and
@@ -65,7 +65,7 @@ not needed to build or run the app itself):
 - Python virtualenv with `Pillow`, `zstandard`, and `pyserial` (`pip install -r requirements-app.txt`)
 - `ffmpeg` for GIF/video input
 
-The menu-bar app itself is fully native Swift: image/GIF/video encoding,
+The macOS app itself is fully native Swift: image/GIF/video encoding,
 zstd compression, and packet construction all run in-process (no Python,
 no PyInstaller, no bundled virtualenv). The app still bundles an LGPL-only
 FFmpeg executable, invoked directly for video/GIF frame decoding. Release
@@ -214,7 +214,13 @@ margin. `iconutil` also requires the input directory to literally be named
 `*.iconset`, not just any folder — it fails silently with "Invalid
 Iconset" otherwise.)
 
-## Menu-bar app
+## macOS app and menu bar
+
+By default, Divoom MiniToo behaves like a normal macOS application: it appears
+in the Dock, opens Control Center at launch, and has the standard app, File,
+Edit, View, Window, and Help menus. Its menu-bar item remains available for
+quick controls. In **Preferences… → App Behavior**, choose **Mostly background
+menu bar app** to return to the quieter, menu-bar-focused experience.
 
 The menu-bar diamond summarizes the user-visible connection state: outline
 means no MiniToo Bluetooth link, half-filled means partial/checking, and filled

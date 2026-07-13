@@ -16,6 +16,20 @@ struct DivoomBuildInfo {
     static let commit = info["DivoomBuildCommit"] as? String ?? "local"
     static let buildRun = info["DivoomBuildRun"] as? String ?? build
 
+    /// The About panel and Preferences deliberately share this exact label,
+    /// so an installed build has one unambiguous version/build/commit
+    /// identity everywhere it is shown.
+    static var buildDescription: String {
+        if buildRun.hasPrefix("local-") {
+            return "local build \(buildRun.dropFirst("local-".count))"
+        }
+        return "build \(buildRun)"
+    }
+
+    static var displayVersion: String {
+        "\(version) (\(buildDescription) · \(commit))"
+    }
+
     static var sourceURL: URL? {
         URL(string: "https://github.com/\(sourceRepository)")
     }
