@@ -1,23 +1,22 @@
-# Self-update strategy (Personal channel)
+# Self-update strategy (Main channel)
 
 ## Goal
 
 Let an installed Divoom MiniToo app update directly to the newest **compatible
-build from the same repository and channel it was built from**.  It must never
-silently jump from the Personal fork/channel to upstream, `main`, or a future
-renamed channel.
+build from the same repository and channel it was built from**. It must never
+silently jump channels, except through the explicitly signed, one-time
+Personal-to-Main bridge described below.
 
-The initial target is the current `psiberfunk/divoom-minitoo-osx` / `personal`
-prerelease channel.  A later project/branch rename is an explicit migration,
-not an automatic source change.
+The active target is `psiberfunk/divoom-minitoo-osx` / `main`. The fork is now
+independently maintained; its `main` intentionally diverges from upstream.
 
 ## Chosen approach
 
 Use Sparkle 2 for macOS update discovery, archive verification, replacement,
 and relaunch.  Do not implement a home-grown GitHub downloader/updater.
 
-Sparkle receives a single branch-specific HTTPS appcast.  The `personal`
-appcast describes only the newest Personal release, so a user jumps directly
+Sparkle receives a single branch-specific HTTPS appcast. The `main`
+appcast describes only the newest Main release, so a user jumps directly
 to the current build; it is not a sequential upgrade path.  Release archives
 will have immutable URLs internally to avoid an overwrite/cache race, even
 though the user-facing channel is simply "latest Personal".

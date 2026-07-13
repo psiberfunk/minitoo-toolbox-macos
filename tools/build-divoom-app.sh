@@ -23,6 +23,8 @@ SOURCE_REPOSITORY="${DIVOOM_SOURCE_REPOSITORY:-psiberfunk/divoom-minitoo-osx}"
 SOURCE_BRANCH="${DIVOOM_SOURCE_BRANCH:-$(git -C "$ROOT" branch --show-current 2>/dev/null || echo local)}"
 UPDATE_CHANNEL="${DIVOOM_UPDATE_CHANNEL:-$SOURCE_BRANCH}"
 UPDATE_FEED_URL="${DIVOOM_UPDATE_FEED_URL:-}"
+TRANSITION_FEED_URL="${DIVOOM_TRANSITION_FEED_URL:-}"
+TRANSITION_CHANNEL="${DIVOOM_TRANSITION_CHANNEL:-}"
 SPARKLE_PUBLIC_KEY="${DIVOOM_SPARKLE_PUBLIC_KEY:-}"
 BUILD_COMMIT="${DIVOOM_BUILD_COMMIT:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo local)}"
 BUILD_RUN="${DIVOOM_BUILD_RUN:-local-$BUILD_VERSION}"
@@ -118,6 +120,10 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <string>$UPDATE_CHANNEL</string>
   <key>DivoomUpdateFeedURL</key>
   <string>$UPDATE_FEED_URL</string>
+  <key>DivoomTransitionFeedURL</key>
+  <string>$TRANSITION_FEED_URL</string>
+  <key>DivoomTransitionChannel</key>
+  <string>$TRANSITION_CHANNEL</string>
   <key>SUFeedURL</key>
   <string>$UPDATE_FEED_URL</string>
   <key>SUPublicEDKey</key>

@@ -3,8 +3,10 @@ import Foundation
 import Sparkle
 
 /// Owns Sparkle configuration for the channel embedded in this particular app
-/// build.  There is intentionally no generic GitHub "latest" lookup here:
+/// build. There is intentionally no generic GitHub "latest" lookup here:
 /// the build's feed URL and Sparkle channel are the update trust boundary.
+/// The sole exception is an explicitly embedded, signed Personal-to-main
+/// migration bridge; new main builds cannot use that exception.
 final class DivoomUpdateController: NSObject, SPUUpdaterDelegate {
     static let automaticChecksKey = "AutomaticallyCheckForUpdates"
     static let consentPresentedKey = "UpdateConsentPresented"
@@ -82,11 +84,14 @@ final class DivoomUpdateController: NSObject, SPUUpdaterDelegate {
     }
 
     func feedURLString(for updater: SPUUpdater) -> String? {
-        DivoomBuildInfo.updateFeedURL
+        DivoomBuildInfo.hasTransition ? DivoomBuildInfo.transitionFeedURL : DivoomBuildInfo.updateFeedURL
     }
 
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        [DivoomBuildInfo.updateChannel]
+        if DivoomBuildInfo.hasTransition {
+            return [DivoomBuildInfo.updateChannel, DivoomBuildInfo.transitionChannel]
+        }
+        return [DivoomBuildInfo.updateChannel]
     }
 
     func updater(_ updater: SPUUpdater, userDidMake choice: SPUUserUpdateChoice, forUpdate updateItem: SUAppcastItem, state: SPUUserUpdateState) {

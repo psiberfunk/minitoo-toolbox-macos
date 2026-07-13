@@ -90,9 +90,9 @@ To build both Swift slices on a Mac with the matching SDK support:
 DIVOOM_ARCHS="arm64 x86_64" tools/build-divoom-app.sh
 ```
 
-The `personal` branch's GitHub Actions workflow builds the two slices on
-their native runners and publishes one universal DMG to the rolling
-`personal-latest` prerelease.
+The independently maintained `main` branch's GitHub Actions workflow builds
+the two slices on their native runners and publishes one universal DMG to the
+rolling `main-latest` prerelease.
 
 This builds:
 
@@ -134,7 +134,7 @@ real compress-then-decompress round-trip), and image resize/crop math.
 No Bluetooth connection or physical device is needed. SwiftUI views and
 anything Bluetooth/hardware-facing aren't covered by this suite and still
 need manual testing against a real MiniToo. CI runs this same command on
-every push to `personal` and blocks the release build on a failure.
+every push to `main` and blocks the release build on a failure.
 
 ## Installing a release build
 
@@ -154,8 +154,8 @@ the two reserved panels of its pixel-art background.
 
 Updater-enabled releases ask once on their first normal launch whether to
 check automatically for updates. Updates remain locked to the repository and
-branch/channel embedded in that build—for example, a `personal` build checks
-only the Personal feed, never a generic GitHub "latest" release. Preferences
+branch/channel embedded in that build—for example, a `main` build checks only
+the Main feed, never a generic GitHub "latest" release. Preferences
 shows the exact source repository, branch, channel, commit, and build number,
 and provides a manual **Check for Updates…** action.
 

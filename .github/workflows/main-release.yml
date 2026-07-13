@@ -1,20 +1,37 @@
-name: Build personal macOS app
+name: Build main macOS app
 
 on:
   push:
-    branches: [personal]
+    branches: [main]
     paths-ignore:
       - "**/*.md"
   workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "Use personal-transition only for the final Personal-to-main bridge."
+        required: false
+        default: main
+        type: choice
+        options: [main, personal-transition]
 
 permissions:
   contents: write
 
 concurrency:
-  group: personal-release
+  group: main-release
   cancel-in-progress: true
 
 jobs:
+  validate-release-channel:
+    name: Validate release channel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject an unsafe bridge invocation
+        if: inputs.release_channel == 'personal-transition' && github.ref_name != 'personal'
+        run: |
+          echo "The Personal bridge may only be built from the preserved personal branch." >&2
+          exit 1
+
   test:
     name: Run unit tests
     runs-on: macos-15
@@ -25,7 +42,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.label }} slice
-    needs: test
+    needs: [validate-release-channel, test]
     strategy:
       fail-fast: false
       matrix:
@@ -57,13 +74,23 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          CHANNEL="${{ inputs.release_channel == 'personal-transition' && 'personal' || 'main' }}"
+          VERSION_PREFIX="${{ inputs.release_channel == 'personal-transition' && '0.1.0-alpha' || '0.2.0-alpha' }}"
+          TRANSITION_FEED_URL=""
+          TRANSITION_CHANNEL=""
+          if [[ "$CHANNEL" == "personal" ]]; then
+            TRANSITION_FEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/main-latest/appcast-main.xml"
+            TRANSITION_CHANNEL="main"
+          fi
           DIVOOM_ARCHS=${{ matrix.arch }} \
-          DIVOOM_APP_VERSION="0.1.0-alpha.${GITHUB_RUN_NUMBER}" \
+          DIVOOM_APP_VERSION="${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" \
           DIVOOM_BUILD_VERSION="${GITHUB_RUN_NUMBER}" \
           DIVOOM_SOURCE_REPOSITORY="${GITHUB_REPOSITORY}" \
-          DIVOOM_SOURCE_BRANCH="${GITHUB_REF_NAME}" \
-          DIVOOM_UPDATE_CHANNEL="${GITHUB_REF_NAME}" \
-          DIVOOM_UPDATE_FEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/personal-latest/appcast-${GITHUB_REF_NAME}.xml" \
+          DIVOOM_SOURCE_BRANCH="$CHANNEL" \
+          DIVOOM_UPDATE_CHANNEL="$CHANNEL" \
+          DIVOOM_UPDATE_FEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${CHANNEL}-latest/appcast-${CHANNEL}.xml" \
+          DIVOOM_TRANSITION_FEED_URL="$TRANSITION_FEED_URL" \
+          DIVOOM_TRANSITION_CHANNEL="$TRANSITION_CHANNEL" \
           DIVOOM_SPARKLE_PUBLIC_KEY="BWqgCW8t6A6R+tPkslx9LKIuU620nJw3w1L1+JhEJTY=" \
           DIVOOM_BUILD_COMMIT="${GITHUB_SHA}" \
           DIVOOM_BUILD_RUN="${GITHUB_RUN_NUMBER}" \
@@ -121,6 +148,9 @@ jobs:
           name: ffmpeg-8.1.2-source
           path: ffmpeg-source
       - name: Combine architecture-specific resources and binaries
+        env:
+          CHANNEL: ${{ inputs.release_channel == 'personal-transition' && 'personal' || 'main' }}
+          VERSION_PREFIX: ${{ inputs.release_channel == 'personal-transition' && '0.1.0-alpha' || '0.2.0-alpha' }}
         run: |
           ditto -x -k arm64/Divoom-MiniToo-arm64.zip .
           mv "Divoom MiniToo.app" arm64.app
@@ -138,7 +168,7 @@ jobs:
             "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg" \
             -output "Divoom MiniToo.app/Contents/Resources/tools/ffmpeg"
           codesign --force --deep --sign - "Divoom MiniToo.app"
-          UPDATE_TAG="personal-update-${GITHUB_RUN_NUMBER}"
+          UPDATE_TAG="${CHANNEL}-update-${GITHUB_RUN_NUMBER}"
           UPDATE_NAME="Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip"
           UPDATE_DIR="update-feed"
           mkdir -p "$UPDATE_DIR"
@@ -149,10 +179,10 @@ jobs:
               --ed-key-file - \
               --maximum-versions 1 \
               --maximum-deltas 0 \
-              --channel personal \
+              --channel "$CHANNEL" \
               --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${UPDATE_TAG}/" \
-              --full-release-notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/personal-latest" \
-              -o "$UPDATE_DIR/appcast-personal.xml" \
+              --full-release-notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${CHANNEL}-latest" \
+              -o "$UPDATE_DIR/appcast-${CHANNEL}.xml" \
               "$UPDATE_DIR"
           dmgbuild -s tools/dmgbuild-settings.py "Divoom MiniToo" Divoom-MiniToo-macos-universal.dmg
           shasum -a 256 Divoom-MiniToo-macos-universal.dmg > Divoom-MiniToo-macos-universal.dmg.sha256
@@ -166,37 +196,39 @@ jobs:
             Divoom-MiniToo-macos-universal.dmg.sha256
             update-feed/Divoom-MiniToo-macos-universal-update-${{ github.run_number }}.zip
             update-feed/Divoom-MiniToo-macos-universal-update-${{ github.run_number }}.md
-            update-feed/appcast-personal.xml
+            update-feed/appcast-${{ inputs.release_channel == 'personal-transition' && 'personal' || 'main' }}.xml
             ffmpeg-source/ffmpeg-8.1.2.tar.xz
           retention-days: 7
       - name: Publish rolling prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.release_channel == 'personal-transition' && 'personal' || 'main' }}
+          VERSION_PREFIX: ${{ inputs.release_channel == 'personal-transition' && '0.1.0-alpha' || '0.2.0-alpha' }}
         run: |
-          UPDATE_TAG="personal-update-${GITHUB_RUN_NUMBER}"
+          UPDATE_TAG="${CHANNEL}-update-${GITHUB_RUN_NUMBER}"
           if gh release view "$UPDATE_TAG" >/dev/null 2>&1; then
             gh release upload "$UPDATE_TAG" "update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --clobber
           else
-            gh release create "$UPDATE_TAG" "update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --target "$GITHUB_SHA" --title "Personal update ${GITHUB_RUN_NUMBER}" --prerelease --notes "Immutable Sparkle update archive for the Personal channel."
+            gh release create "$UPDATE_TAG" "update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --target "$GITHUB_SHA" --title "${CHANNEL} update ${GITHUB_RUN_NUMBER}" --prerelease --notes "Immutable Sparkle update archive for the ${CHANNEL} channel."
           fi
-          if gh release view personal-latest >/dev/null 2>&1; then
+          if gh release view "${CHANNEL}-latest" >/dev/null 2>&1; then
             # The user-facing artifact changed from ZIP to DMG. Remove stale
             # ZIP assets so each rolling release has one unambiguous download.
             for stale_asset in Divoom-MiniToo-macos-universal.zip Divoom-MiniToo-macos-universal.zip.sha256; do
-              gh release delete-asset personal-latest "$stale_asset" --yes || true
+              gh release delete-asset "${CHANNEL}-latest" "$stale_asset" --yes || true
             done
-            gh release view personal-latest --json assets --jq '.assets[].name' | while IFS= read -r asset; do
+            gh release view "${CHANNEL}-latest" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
               if [[ "$asset" == Divoom-MiniToo-macos-universal-update-*.md && "$asset" != "Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md" ]]; then
-                gh release delete-asset personal-latest "$asset" --yes
+                gh release delete-asset "${CHANNEL}-latest" "$asset" --yes
               fi
             done
-            gh release upload personal-latest Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md update-feed/appcast-personal.xml ffmpeg-source/ffmpeg-8.1.2.tar.xz --clobber
-            gh release edit personal-latest --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
+            gh release upload "${CHANNEL}-latest" Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md "update-feed/appcast-${CHANNEL}.xml" ffmpeg-source/ffmpeg-8.1.2.tar.xz --clobber
+            gh release edit "${CHANNEL}-latest" --title "Divoom MiniToo ${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
           else
-            gh release create personal-latest Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md update-feed/appcast-personal.xml ffmpeg-source/ffmpeg-8.1.2.tar.xz --title "Divoom MiniToo 0.1.0-alpha.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
+            gh release create "${CHANNEL}-latest" Divoom-MiniToo-macos-universal.dmg Divoom-MiniToo-macos-universal.dmg.sha256 update-feed/Divoom-MiniToo-macos-universal-update-${GITHUB_RUN_NUMBER}.md "update-feed/appcast-${CHANNEL}.xml" ffmpeg-source/ffmpeg-8.1.2.tar.xz --title "Divoom MiniToo ${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" --prerelease --notes-file RELEASE_NOTES.md
           fi
           count=0
-          gh release list --limit 100 --json tagName --jq '.[] | select(.tagName | startswith("personal-update-")) | .tagName' | while IFS= read -r tag; do
+          gh release list --limit 100 --json tagName --jq ".[] | select(.tagName | startswith(\"${CHANNEL}-update-\")) | .tagName" | while IFS= read -r tag; do
             count=$((count + 1))
             if [ "$count" -gt 3 ]; then
               gh release delete "$tag" --yes --cleanup-tag

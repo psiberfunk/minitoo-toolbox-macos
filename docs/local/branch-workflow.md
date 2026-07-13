@@ -4,19 +4,17 @@ How this fork is managed relative to alvinunreal/divoom-minitoo-osx. Not a
 statement of upstream project policy.
 
 ## Branches
-- `main` — kept clean, matches `origin/main`. Cut new feature branches here
-  when possible.
-- `personal` (pushed to `fork/personal`) — daily-use branch, everything
-  merged in.
-- `fork/main` (GitHub) — untouched mirror of upstream `main`.
-
-If a new branch depends on something only merged into `personal`, cut it
-from `personal`'s tip instead of clean `main`, and say so in the PR body.
+- `main` (pushed to `fork/main`) — the active, independently maintained
+  branch and release line. Cut all new feature branches here.
+- `personal` (pushed to `fork/personal`) — preserved only for the one-time
+  signed updater bridge; it is no longer a development branch.
+- `origin/main` — the upstream comparison point. It intentionally diverges
+  from this fork's `main`; do not merge or push to it by routine.
 
 ## CI doesn't run for doc-only pushes
 
-`.github/workflows/personal-release.yml`'s push trigger has
-`paths-ignore: ["**/*.md"]` (added 2026-07-11) — a push to `personal`
+`.github/workflows/main-release.yml`'s push trigger has
+`paths-ignore: ["**/*.md"]` — a push to `main`
 that only touches `.md` files (README, PROTOCOL.md, anything under
 `docs/local/`, `THIRD_PARTY_NOTICES.md`, `RELEASE_NOTES.md`) doesn't
 trigger a build/release run at all. A commit that touches even one
@@ -32,11 +30,11 @@ assuming something's wrong.
 
 ## Keep release notes current
 
-`RELEASE_NOTES.md` is the user-facing text for both the `personal-latest`
+`RELEASE_NOTES.md` is the user-facing text for both the `main-latest`
 GitHub release and its Sparkle update metadata; it is not a historical changelog
 or an internal engineering log. Update it in the same change set as every
 user-visible feature, behavior change, limitation, installation/update change,
-or material reliability improvement destined for `personal`. Describe what a
+or material reliability improvement destined for `main`. Describe what a
 user can do or needs to know, distinguish hardware-confirmed functionality from
 capture-derived/experimental controls, and do not advertise disabled prototypes
 as available features. Keep implementation-only changes (refactors, tests,
@@ -86,32 +84,20 @@ normal; leave existing PR branches alone unless asked.
 Grep for duplicate `func` declarations before trusting a clean merge:
 `grep -oE '(@objc )?func [a-zA-Z0-9_]+' file.swift | sort | uniq -c | sort -rn`
 
-## Future independent-fork transition (not approved or scheduled yet)
+## Independent-fork policy
 
-The current `personal` branch is the active daily-use line, but this fork is
-not yet represented as a renamed successor or a takeover of upstream. If the
-fork eventually becomes its own maintained product, plan the transition as one
-intentional change set rather than gradually implying it:
+`main` is the active independent downstream line. This is a repository and
+release-policy change, not a claim of upstream endorsement or a license grant.
+Keep upstream credit and do not add a blanket license over upstream-authored
+material. The separate clean-room strategy governs later source replacement.
 
-1. Confirm legal distribution rights first. As of 2026-07-10, the upstream
-   repository's root listing has no `LICENSE` file. Keep upstream attribution,
-   do not claim upstream abandonment or endorsement, and do not add a blanket
-   license that purports to cover upstream-authored code without permission.
-2. Choose a new app/project name and update the visible app identity,
-   `CFBundleIdentifier`, release assets, README wording, and support/log paths.
-   Include a UserDefaults migration so existing device-address preferences are
-   not silently lost when the bundle identifier changes.
-3. Promote the active integrated line from `personal` to this fork's `main`,
-   make it the GitHub default branch, and retarget the release workflow from
-   `personal` to `main`. Preserve an untouched upstream-tracking branch and
-   the `origin` remote for future comparison.
-4. Describe the result accurately: an independently maintained downstream
-   fork, with upstream credit and no claim of official succession unless the
-   upstream author grants it.
+## One-time Personal updater migration
 
-Until those gates are deliberately satisfied, retain the present names and
-branch arrangement. This is a future to-do, not authorization to rename,
-relicense, or publish a differently branded app now.
+Once the first `main` release exists, dispatch `main-release.yml` from the
+preserved `personal` ref with `release_channel=personal-transition`, and
+monitor it to a terminal result. Old Personal builds first receive that signed
+Personal bridge; it then checks the signed Main feed and accepts only `main`.
+Do not delete `personal-latest` or its bridge release until retirement.
 
 ## Historical note
 Every PR branch used to require swapping the real device MAC for a

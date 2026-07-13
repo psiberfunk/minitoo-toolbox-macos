@@ -1,7 +1,7 @@
 # Divoom MiniToo alpha
 
-This is an early personal alpha build for macOS 12 and later. It is now a
-substantial downstream expansion of the original upstream menu-bar app.
+This is an early independently maintained alpha build for macOS 12 and later.
+It is a substantial downstream expansion of the original upstream menu-bar app.
 
 ## Highlights
 
@@ -31,9 +31,9 @@ substantial downstream expansion of the original upstream menu-bar app.
   control service more carefully after launch or a dropped connection.
 - **Polished Mac experience:** an app icon, Preferences (including optional
   Dock icon and battery display), and a purpose-built DMG installer.
-- **Signed Personal-channel updates:** after first-launch consent, the app can
+- **Signed Main-channel updates:** after first-launch consent, the app can
   check its embedded, branch-locked signed update feed and download only the
-  newest compatible Personal release. Preferences shows the exact source and
+  newest compatible Main release. Preferences shows the exact source and
   build information.
 
 FFmpeg remains bundled for GIF/video decoding; the corresponding source archive
