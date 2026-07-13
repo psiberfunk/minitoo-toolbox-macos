@@ -90,7 +90,7 @@ into a separate release-promotion job or workflow:
 - CI/test/build jobs: `contents: read`, no publishing credentials, no Sparkle
   private key. They can create short-lived internal artifacts.
 - Release job: only this job gets `contents: write`, publishes
-  `personal-latest`/immutable update releases, and generates the signed
+  `main-latest`/immutable update releases, and generates the signed
   appcast.
 - Create a GitHub Environment named `release`; move
   `DIVOOM_SPARKLE_PRIVATE_KEY` from repository-secret scope to that

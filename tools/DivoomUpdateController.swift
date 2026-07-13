@@ -84,13 +84,10 @@ final class DivoomUpdateController: NSObject, SPUUpdaterDelegate {
     }
 
     func feedURLString(for updater: SPUUpdater) -> String? {
-        DivoomBuildInfo.hasTransition ? DivoomBuildInfo.transitionFeedURL : DivoomBuildInfo.updateFeedURL
+        DivoomBuildInfo.updateFeedURL
     }
 
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        if DivoomBuildInfo.hasTransition {
-            return [DivoomBuildInfo.updateChannel, DivoomBuildInfo.transitionChannel]
-        }
         return [DivoomBuildInfo.updateChannel]
     }
 

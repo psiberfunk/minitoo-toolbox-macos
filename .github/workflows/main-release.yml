@@ -6,13 +6,6 @@ on:
     paths-ignore:
       - "**/*.md"
   workflow_dispatch:
-    inputs:
-      release_channel:
-        description: "Use a transition channel only for a documented updater bridge."
-        required: false
-        default: main
-        type: choice
-        options: [main, personal-transition, main-transition, main-legacy-bridge]
 
 permissions:
   contents: write
@@ -22,16 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate-release-channel:
-    name: Validate release channel
-    runs-on: ubuntu-latest
-    steps:
-      - name: Reject an unsafe bridge invocation
-        if: (inputs.release_channel == 'personal-transition' && github.ref_name != 'personal') || ((inputs.release_channel == 'main-transition' || inputs.release_channel == 'main-legacy-bridge') && github.ref_name != 'main')
-        run: |
-          echo "Transition releases may only be built from their documented source branch." >&2
-          exit 1
-
   test:
     name: Run unit tests
     runs-on: macos-15
@@ -42,7 +25,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.label }} slice
-    needs: [validate-release-channel, test]
+    needs: test
     strategy:
       fail-fast: false
       matrix:
@@ -74,9 +57,6 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          REQUESTED_CHANNEL="${{ inputs.release_channel || 'main' }}"
-          RELEASE_CHANNEL="main"
-          RUNTIME_CHANNEL="main"
           VERSION_PREFIX="0.2.0-alpha"
           # Sparkle compares CFBundleVersion, not CFBundleShortVersionString.
           # Legacy public builds reached at least build 39 before the renamed
@@ -84,30 +64,13 @@ jobs:
           # post-rename builds above that sequence so legacy Main clients can
           # discover the identity-migration release.
           RELEASE_BUILD_NUMBER=$((3000 + GITHUB_RUN_NUMBER))
-          TRANSITION_FEED_URL=""
-          TRANSITION_CHANNEL=""
-          if [[ "$REQUESTED_CHANNEL" == "personal-transition" ]]; then
-            RELEASE_CHANNEL="personal"
-            RUNTIME_CHANNEL="personal"
-            VERSION_PREFIX="0.1.0-alpha"
-            RELEASE_BUILD_NUMBER=$((1500 + GITHUB_RUN_NUMBER))
-            TRANSITION_FEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/main-transition-latest/appcast-main-transition.xml"
-            TRANSITION_CHANNEL="main-transition"
-          elif [[ "$REQUESTED_CHANNEL" == "main-transition" ]]; then
-            RELEASE_CHANNEL="main-transition"
-            RELEASE_BUILD_NUMBER=$((2000 + GITHUB_RUN_NUMBER))
-          elif [[ "$REQUESTED_CHANNEL" == "main-legacy-bridge" ]]; then
-            RELEASE_BUILD_NUMBER=$((2000 + GITHUB_RUN_NUMBER))
-          fi
           DIVOOM_ARCHS=${{ matrix.arch }} \
           DIVOOM_APP_VERSION="${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" \
           DIVOOM_BUILD_VERSION="$RELEASE_BUILD_NUMBER" \
           DIVOOM_SOURCE_REPOSITORY="${GITHUB_REPOSITORY}" \
-          DIVOOM_SOURCE_BRANCH="$RUNTIME_CHANNEL" \
-          DIVOOM_UPDATE_CHANNEL="$RUNTIME_CHANNEL" \
-          DIVOOM_UPDATE_FEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RUNTIME_CHANNEL}-latest/appcast-${RUNTIME_CHANNEL}.xml" \
-          DIVOOM_TRANSITION_FEED_URL="$TRANSITION_FEED_URL" \
-          DIVOOM_TRANSITION_CHANNEL="$TRANSITION_CHANNEL" \
+          DIVOOM_SOURCE_BRANCH="main" \
+          DIVOOM_UPDATE_CHANNEL="main" \
+          DIVOOM_UPDATE_FEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/main-latest/appcast-main.xml" \
           DIVOOM_SPARKLE_PUBLIC_KEY="BWqgCW8t6A6R+tPkslx9LKIuU620nJw3w1L1+JhEJTY=" \
           DIVOOM_BUILD_COMMIT="${GITHUB_SHA}" \
           DIVOOM_BUILD_RUN="${GITHUB_RUN_NUMBER}" \
@@ -166,9 +129,8 @@ jobs:
           path: ffmpeg-source
       - name: Combine architecture-specific resources and binaries
         env:
-          CHANNEL: ${{ inputs.release_channel == 'personal-transition' && 'personal' || inputs.release_channel == 'main-transition' && 'main-transition' || 'main' }}
-          LEGACY_ARCHIVE: ${{ inputs.release_channel == 'main-transition' || inputs.release_channel == 'main-legacy-bridge' }}
-          VERSION_PREFIX: ${{ inputs.release_channel == 'personal-transition' && '0.1.0-alpha' || '0.2.0-alpha' }}
+          CHANNEL: main
+          VERSION_PREFIX: 0.2.0-alpha
           DIVOOM_SPARKLE_PRIVATE_KEY: ${{ secrets.DIVOOM_SPARKLE_PRIVATE_KEY }}
         run: |
           ditto -x -k arm64/MiniToo-Toolbox-arm64.zip .
@@ -191,18 +153,7 @@ jobs:
           UPDATE_NAME="MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.zip"
           UPDATE_DIR="update-feed"
           mkdir -p "$UPDATE_DIR"
-          # Sparkle's plain installer finds the source app in an archive by
-          # the currently installed bundle name. The one-time rename bridge
-          # therefore keeps the archive directory as Divoom MiniToo.app while
-          # preserving the new app's signed contents and metadata inside it.
-          if [[ "$LEGACY_ARCHIVE" == "true" ]]; then
-            LEGACY_UPDATE_ROOT="legacy-update-root"
-            mkdir -p "$LEGACY_UPDATE_ROOT"
-            ditto "MiniToo Toolbox.app" "$LEGACY_UPDATE_ROOT/Divoom MiniToo.app"
-            ditto -c -k --sequesterRsrc --keepParent "$LEGACY_UPDATE_ROOT/Divoom MiniToo.app" "$UPDATE_DIR/$UPDATE_NAME"
-          else
-            ditto -c -k --sequesterRsrc --keepParent "MiniToo Toolbox.app" "$UPDATE_DIR/$UPDATE_NAME"
-          fi
+          ditto -c -k --sequesterRsrc --keepParent "MiniToo Toolbox.app" "$UPDATE_DIR/$UPDATE_NAME"
           cp RELEASE_NOTES.md "$UPDATE_DIR/${UPDATE_NAME%.zip}.md"
           printf '%s' "$DIVOOM_SPARKLE_PRIVATE_KEY" | \
             .build/artifacts/sparkle/Sparkle/bin/generate_appcast \
@@ -224,14 +175,14 @@ jobs:
             MiniToo-Toolbox-macos-universal.dmg.sha256
             update-feed/MiniToo-Toolbox-macos-universal-update-${{ github.run_number }}.zip
             update-feed/MiniToo-Toolbox-macos-universal-update-${{ github.run_number }}.md
-            update-feed/appcast-${{ inputs.release_channel == 'personal-transition' && 'personal' || inputs.release_channel == 'main-transition' && 'main-transition' || 'main' }}.xml
+            update-feed/appcast-main.xml
             ffmpeg-source/ffmpeg-8.1.2.tar.xz
           retention-days: 7
       - name: Publish rolling prerelease
         env:
           GH_TOKEN: ${{ github.token }}
-          CHANNEL: ${{ inputs.release_channel == 'personal-transition' && 'personal' || inputs.release_channel == 'main-transition' && 'main-transition' || 'main' }}
-          VERSION_PREFIX: ${{ inputs.release_channel == 'personal-transition' && '0.1.0-alpha' || '0.2.0-alpha' }}
+          CHANNEL: main
+          VERSION_PREFIX: 0.2.0-alpha
         run: |
           UPDATE_TAG="${CHANNEL}-update-${GITHUB_RUN_NUMBER}"
           if gh release view "$UPDATE_TAG" >/dev/null 2>&1; then

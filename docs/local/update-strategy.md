@@ -2,10 +2,8 @@
 
 ## Goal
 
-Let an installed Divoom MiniToo app update directly to the newest **compatible
-build from the same repository and channel it was built from**. It must never
-silently jump channels, except through the explicitly signed, one-time
-Personal-to-Main bridge described below.
+Let an installed MiniToo Toolbox app update directly to the newest compatible
+build from this repository's `main` channel.
 
 The active target is `psiberfunk/minitoo-toolbox-macos` / `main`. The fork is now
 independently maintained; its `main` intentionally diverges from upstream.
@@ -84,13 +82,9 @@ Keep the styled DMG for first installation.  Add a separate app-only universal
 update ZIP and a signed `appcast-main.xml` feed. The stable branch-specific
 HTTPS feed is an asset on the rolling `main-latest` GitHub release. It contains
 only the newest Main item and points to that item's immutable update-release
-asset. The retained `personal-latest` feed is a one-time, three-stage bridge
-for older Divoom MiniToo installations: the legacy-name Personal release routes
-to a compatibility-only feed, whose archive retains `Divoom MiniToo.app` as
-its outer directory while carrying the new MiniToo Toolbox metadata. That
-installed compatibility build then uses the normal Main feed, whose archive
-uses `MiniToo Toolbox.app`. This is necessary because Sparkle's plain
-installer locates an update source by the installed bundle name.
+asset. The project publishes only the `main` channel. Pre-rename builds are
+retired from in-app migration; their small remaining user base must install a
+current Main DMG manually once.
 
 The Sparkle Ed25519 private key is stored only as a GitHub Actions secret; the
 public key is embedded in the app.  CI creates a per-build immutable update
@@ -102,8 +96,8 @@ asset, signs it, updates the one-item Main feed, and retains the rolling
 Immutable update URLs are an implementation detail, not an archive.  After a
 successful publish, CI keeps only the current channel update release plus the
 two immediately preceding channel update releases.  It deletes older
-channel-specific update releases *and their tags*, never the rolling
-`personal-latest` release and never unrelated releases.  Keeping three gives
+Main-channel update releases *and their tags*, never the rolling `main-latest`
+release or unrelated releases. Keeping three gives
 an in-flight updater a short safety window without letting GitHub release
 storage grow indefinitely.  CI workflow artifacts for update packaging use a
 short retention period as well; the existing FFmpeg cache remains governed by
@@ -151,9 +145,9 @@ changed by this work.
   first-launch consent dialog, menu/manual check, and Preferences About &
   Updates section. Automatic checks default on only after user consent;
   downloads/restarts remain explicitly user driven during the ad-hoc phase.
-- **2026-07-11:** Extended the Personal workflow to create a signed
-  one-item appcast and immutable update ZIP, publish the feed on
-  `personal-latest`, and retain three `personal-update-*` releases. Local
+- **2026-07-11:** Extended the release workflow to create a signed one-item
+  appcast and immutable update ZIP, publish the feed on the rolling release,
+  and retain three immutable update releases. Local
   universal bundle and appcast-generation rehearsals passed. Hosted release
   run `29154079898` then passed end-to-end: both native slices, universal
   assembly, signed appcast, immutable update ZIP, and rolling-release publish.
@@ -162,10 +156,7 @@ changed by this work.
   subsequent verified in-app updates relaunch without another Gatekeeper step.
   Remaining hardening is Developer ID signing and notarization; the
   active-media-send restart guard remains an explicit future UX safeguard.
-- **2026-07-13:** Reworked the legacy identity bridge after real Sparkle logs
-  showed that a validly signed renamed archive was rejected solely because its
-  outer bundle directory did not match the installed app. Published Personal
-  build 1510, rename-compatibility build 2012, and normal Main build 3011.
-  The compatibility archive retains the legacy outer directory only for that
-  hop; downloaded feeds, archive roots, metadata, and extracted code
-  signatures were checked. Installed-app confirmation remains pending.
+- **2026-07-13:** Retired the attempted Personal-to-Main migration rather than
+  carrying a legacy updater channel for two remaining users. The release
+  pipeline and app metadata are Main-only; old builds require a one-time
+  manual installation of a current Main DMG.

@@ -91,45 +91,21 @@ Divoom MiniToo.” A focused public-reference audit found only intentional
 upstream credit, legacy-user bridge guidance, and release-cleanup rules.
 
 The neutral README acknowledgement follow-up is `4410da4`; it is Markdown-only
-and intentionally did not publish a new application release. Do not remove
-`personal-latest` or its bridge assets.
+and intentionally did not publish a new application release. The former
+Personal artifacts were later retired in Phase 4a.
 
-### Phase 4a — legacy updater bridge sequence (published; awaiting user validation)
+### Phase 4a — legacy updater retirement (complete)
 
-The first direct Personal-to-renamed-App attempt was not installable even
-though Sparkle verified its EdDSA signature: Sparkle's plain installer looks
-for an archive directory matching the installed bundle name. A renamed archive
-containing `MiniToo Toolbox.app` therefore cannot directly replace an installed
-`Divoom MiniToo.app`.
+An attempted Personal-to-renamed-App bridge exposed a Sparkle limitation: a
+renamed archive cannot replace a differently named installed bundle using the
+plain installer. Rather than preserve a multi-stage updater path for two
+remaining users, the project retired that path on 2026-07-13.
 
-The published, ordered path is now:
-
-`legacy Personal build 39 → Personal build 1510 → rename-compatibility build
-2012 → normal MiniToo Toolbox build 3011 (and later)`.
-
-Personal build 1510 preserves the legacy bundle identity but routes only to
-the private `main-transition` feed. Build 2012 has the new MiniToo Toolbox
-identity, identifier, and normal Main feed metadata, while its signed archive
-directory is deliberately `Divoom MiniToo.app`; that is the one compatibility
-hop Sparkle can install. Normal Main build 3011 and later use the standard
-`MiniToo Toolbox.app` archive directory. The floors 1500, 2000, and 3000 keep
-Sparkle's numeric ordering unambiguous.
-
-Evidence: Personal commit `b354260` published successful run `29259087591`;
-Main workflow commit `57a5aa7` published normal run `29260726218` and
-compatibility run `29261118286`, both successful. Downloaded feeds and
-immutable archives were checked: Personal advertises 1510 and the transition
-feed; the compatibility feed advertises 2012 and its archive root is
-`Divoom MiniToo.app` with new identity metadata; Main advertises 3011 and its
-archive root is `MiniToo Toolbox.app`. All three extracted apps passed
-`codesign --verify --deep --strict`. This is artifact validation, not an
-installed-app success claim. Do not remove the Personal bridge.
-
-### Phase 5 — retirement decision (explicit later decision)
-
-After an agreed observation period and a successful old-install update test,
-choose a retirement date for `personal-latest`, `personal-update-4`, and the
-preserved `personal` branch. Do not remove them earlier.
+The retired branch, migration-only feeds and releases, bridge-only workflow
+inputs, and bridge-only app metadata were removed. Legacy users must
+make a one-time manual installation of a current MiniToo Toolbox Main DMG.
+Normal releases remain Main-only, with the standard `MiniToo Toolbox.app`
+archive directory and 3000+ build-number floor.
 
 ## Concurrent-agent rules
 

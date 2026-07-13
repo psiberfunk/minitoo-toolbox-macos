@@ -444,7 +444,7 @@ upstreamed).
 - Hosted release pipeline is now proven end-to-end. The initial two failures
   (`29100401008`, signing/NASM; `29112757315`, same-path `mv`) are corrected;
   `29113738061` first assembled/published successfully. The current styled-DMG
-  run (`29118886535`) also succeeded. The rolling `personal-latest` prerelease
+  run (`29118886535`) also succeeded. The then-active rolling prerelease
   publishes a universal DMG, its SHA-256 checksum, and the separate matching
   FFmpeg 8.1.2 source archive—never the source archive inside the DMG.
 - **CI cache optimization is verified:** `29115469899` warmed the per-arch

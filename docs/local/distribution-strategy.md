@@ -2,7 +2,7 @@
 
 ## Goal
 
-Publish a self-contained universal macOS app from every push to `personal`.
+Publish a self-contained universal macOS app from every push to `main`.
 
 ## Future product identity (deferred)
 
@@ -31,7 +31,7 @@ lives in `docs/local/branch-workflow.md`.
    builds it with GPL/nonfree features disabled and attaches the exact source
    archive with each release. **Implemented and published by the first
    successful CI release.**
-4. Publish the rolling `personal-latest` prerelease only after the local
+4. Publish the rolling `main-latest` prerelease only after the local
    hardware checklist below passes. The first push is also the first real CI
    validation of both hosted macOS architectures, native media support,
    FFmpeg builds, release permissions, and universal assembly.
@@ -52,8 +52,8 @@ assembly because the workflow attempted to rename the extracted Intel app to
 the exact same path. That no-op is removed; the next push validates assembly,
 ad-hoc signing, artifact upload, and release publication. The third run
 (`29113738061`) completed successfully on 2026-07-10 and published the
-universal release, SHA-256 file, and matching FFmpeg source archive to the rolling
-`personal-latest` prerelease.
+universal release, SHA-256 file, and matching FFmpeg source archive to the
+then-active rolling prerelease.
 
 Subsequent successful runs changed the user-facing artifact from ZIP to a
 universal DMG and removed stale ZIP assets. The DMG contains only the app,
@@ -88,11 +88,10 @@ source repository, branch, channel, feed URL, commit, and build number in the
 app. The updater uses only that signed, branch-specific feed, so a Personal
 build cannot silently switch to upstream or a future `main` channel.
 
-Each release will publish a user-facing DMG plus a separate immutable,
-app-only update ZIP. `personal-latest` carries a one-item, signed
-`appcast-personal.xml` that points at the newest immutable ZIP; users therefore
-jump straight to current Personal rather than stepping through old releases.
-The workflow retains only the newest three `personal-update-*` releases. During
+Each release publishes a user-facing DMG plus a separate immutable, app-only
+update ZIP. `main-latest` carries a one-item, signed `appcast-main.xml` that
+points at the newest immutable ZIP. The workflow retains only the newest three
+`main-update-*` releases. During
 the current ad-hoc-signing period, the app offers—not silently performs—an
 explicit default-checked option to remove the verified update bundle's
 quarantine before restart. Developer ID signing and notarization replace this
@@ -101,7 +100,7 @@ and validation checklist. No device protocol behavior changes in this work.
 
 ### CI monitoring rule
 
-The agent that triggers a personal-release workflow owns its outcome: it polls
+The agent that triggers a Main-release workflow owns its outcome: it polls
 that run using concise status checks until success or failure, then immediately
 retrieves and diagnoses any failing job log. It must not simply start a build
 and rely on the user to return with the result. This is also a standing

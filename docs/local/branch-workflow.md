@@ -91,14 +91,6 @@ release-policy change, not a claim of upstream endorsement or a license grant.
 Keep upstream credit and do not add a blanket license over upstream-authored
 material. The separate clean-room strategy governs later source replacement.
 
-## One-time Personal updater migration
-
-Once the first `main` release exists, dispatch `main-release.yml` from the
-preserved `personal` ref with `release_channel=personal-transition`, and
-monitor it to a terminal result. Old Personal builds first receive that signed
-Personal bridge; it then checks the signed Main feed and accepts only `main`.
-Do not delete `personal-latest` or its bridge release until retirement.
-
 ## Historical note
 Every PR branch used to require swapping the real device MAC for a
 placeholder before pushing. Obsolete now — no file hardcodes a MAC anymore.

@@ -12,8 +12,6 @@ struct DivoomBuildInfo {
     static let sourceBranch = info["DivoomSourceBranch"] as? String ?? "local"
     static let updateChannel = info["DivoomUpdateChannel"] as? String ?? sourceBranch
     static let updateFeedURL = info["DivoomUpdateFeedURL"] as? String ?? ""
-    static let transitionFeedURL = info["DivoomTransitionFeedURL"] as? String ?? ""
-    static let transitionChannel = info["DivoomTransitionChannel"] as? String ?? ""
     static let sparklePublicKey = info["SUPublicEDKey"] as? String ?? ""
     static let commit = info["DivoomBuildCommit"] as? String ?? "local"
     static let buildRun = info["DivoomBuildRun"] as? String ?? build
@@ -39,14 +37,5 @@ struct DivoomBuildInfo {
     static var isUpdateConfigured: Bool {
         guard let url = URL(string: updateFeedURL) else { return false }
         return url.scheme == "https" && !updateChannel.isEmpty && !sourceRepository.isEmpty && !sparklePublicKey.isEmpty
-    }
-
-    /// A release may opt into exactly one signed successor channel. This is
-    /// used solely by the final Personal bridge; normal builds leave both
-    /// fields empty and remain branch-locked.
-    static var hasTransition: Bool {
-        guard sourceBranch == "personal", updateChannel == "personal", transitionChannel == "main",
-              let url = URL(string: transitionFeedURL) else { return false }
-        return url.scheme == "https"
     }
 }
