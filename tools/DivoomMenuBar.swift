@@ -159,6 +159,11 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// after the read-only health probe proves it is unusable. Never retry the
     /// reset repeatedly during the same app launch.
     var automaticStartupRecoveryAttempted = false
+    /// The first end-to-end control probe of a launch/start has one bounded
+    /// stale-RFCOMM recovery attempt available.  The menu can open before the
+    /// scheduled startup probe fires, so this is separate from the timer that
+    /// schedules it: whichever probe actually runs first owns that privilege.
+    var initialControlHealthCheckCompleted = false
     var statusItemViewTimer: Timer?
     var controlCenterWindow: NSWindow?
     var controlCenterModel: ControlCenterModel?
@@ -574,6 +579,11 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if let lastControlProbe, Date().timeIntervalSince(lastControlProbe) < 15 { return }
         guard !controlProbeInFlight else { return }
+        // A menu-open probe can beat scheduleInitialControlProbe() by a few
+        // milliseconds. Treat it as the initial probe while startup remains
+        // unresolved; otherwise it would fail with recovery disabled and
+        // suppress the scheduled probe for 15 seconds.
+        let mayRecoverInitialStartup = allowAutomaticStartupRecovery || !initialControlHealthCheckCompleted
         controlProbeInFlight = true
         controlState = .checking
         let probeGeneration = controlProbeGeneration
@@ -606,19 +616,13 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     // channel still works. Try one controlled reset only for
                     // the first launch/start probe; ordinary menu refreshes
                     // merely report the failure and never disrupt audio.
-                    if allowAutomaticStartupRecovery && !self.automaticStartupRecoveryAttempted {
-                        self.automaticStartupRecoveryAttempted = true
-                        self.setStatus("Resetting MiniToo Bluetooth control link…")
-                        self.stopDaemon { [weak self] in
-                            self?.startDaemon(disconnectFirst: true, allowAutomaticStartupRecovery: false)
-                        }
-                        return
-                    }
-                    self.controlState = .unavailable
-                    self.rebuildMenu()
-                    self.refreshTitle()
+                    self.handleInitialControlFailure(
+                        allowAutomaticStartupRecovery: mayRecoverInitialStartup,
+                        fallbackStatus: "Control service is unavailable; see daemon log"
+                    )
                     return
                 }
+                self.initialControlHealthCheckCompleted = true
                 self.controlState = .live
                 self.rebuildMenu()
                 self.refreshTitle()
@@ -637,6 +641,26 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Repairs exactly one failed initial control startup.  A failed daemon
+    /// open and a failed first control probe are two manifestations of the
+    /// same stale RFCOMM session, so both must follow this path.  This is
+    /// intentionally bounded to a single Bluetooth reset per app launch:
+    /// another failure is reported rather than disrupting audio repeatedly.
+    func handleInitialControlFailure(allowAutomaticStartupRecovery: Bool, fallbackStatus: String) {
+        DispatchQueue.main.async {
+            guard allowAutomaticStartupRecovery, !self.automaticStartupRecoveryAttempted else {
+                self.controlState = .unavailable
+                self.setStatus(fallbackStatus)
+                return
+            }
+            self.automaticStartupRecoveryAttempted = true
+            self.setStatus("Resetting MiniToo Bluetooth control link…")
+            self.stopDaemon { [weak self] in
+                self?.startDaemon(disconnectFirst: true, allowAutomaticStartupRecovery: false)
+            }
+        }
+    }
+
 
     func startDaemon(disconnectFirst: Bool, allowAutomaticStartupRecovery: Bool = true) {
         DispatchQueue.main.async {
@@ -644,6 +668,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.controlProbeInFlight = false
             self.lastControlProbe = nil
             self.controlState = .checking
+            self.initialControlHealthCheckCompleted = false
             self.setStatus("Starting control service…")
         }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -686,14 +711,31 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     let logText = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
                     try? FileManager.default.removeItem(at: self.daemonPidFile)
                     if logText.contains("0x-1ffffd44") {
-                        self.setStatus("Control service could not start: Bluetooth/RFCOMM is busy; see daemon log")
+                        // A first-start RFCOMM-open failure is the same stale
+                        // MiniToo Bluetooth state as a daemon that starts but
+                        // then fails its first read-only health probe.  The
+                        // prior code only recovered the latter, which left a
+                        // user-facing "Start Control Service" action that
+                        // predictably failed until they found the debugging
+                        // recovery item.  Perform the same one-shot reset
+                        // here; never loop or repeat it later in the launch.
+                        self.handleInitialControlFailure(
+                            allowAutomaticStartupRecovery: allowAutomaticStartupRecovery,
+                            fallbackStatus: "Control service could not start: Bluetooth/RFCOMM is busy; see daemon log"
+                        )
                     } else {
-                        self.setStatus("Daemon failed; see daemon log")
+                        self.handleInitialControlFailure(
+                            allowAutomaticStartupRecovery: allowAutomaticStartupRecovery,
+                            fallbackStatus: "Control service failed; see daemon log"
+                        )
                     }
                 }
             } catch {
                 self.controlState = .unavailable
-                self.setStatus("Start failed: \(error)")
+                self.handleInitialControlFailure(
+                    allowAutomaticStartupRecovery: allowAutomaticStartupRecovery,
+                    fallbackStatus: "Start failed: \(error)"
+                )
             }
         }
     }

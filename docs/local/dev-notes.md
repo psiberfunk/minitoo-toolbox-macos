@@ -937,12 +937,56 @@ device-originated pause packet from the surrounding app synchronization.
 Pause remains intentionally unsupported until a cleaner, timestamped capture
 establishes a standalone device event or command.
 
+### Stopwatch reset decode follow-up
+
+A clean, post-reboot Android HCI capture isolated the official app's three
+Stopwatch tool-0 writes, each acknowledged by the MiniToo:
+
+- Start: `0x72 [0, 1]`
+- Pause: `0x72 [0, 0]`
+- Reset: `0x72 [0, 2]`
+
+The reset action was performed only after start then pause. This resolved the
+earlier ambiguity: `[0, 0]` is pause, not a combined stop/reset operation.
+The Control Center may now expose separate play/pause and reset controls; it
+still needs direct hardware validation from this app before being called
+working.
+
+**Hardware validation completed (2026-07-12):** the native Control Center's
+separate play, pause, and reset controls were directly tested on the physical
+MiniToo and all behaved correctly. Stopwatch is now a completed feature. The
+curated local capture is `../captures/stopwatch-reset-2026-07-12.cfa.curf`;
+Android HCI-snoop logging was disabled again after collection.
+
+## Initial control recovery race fixed (2026-07-12)
+
+A real launch test exposed an ordering race in the first recovery design. The
+app scheduled an automatic initial `WhiteNoise/Get` control probe, but opening
+the menu immediately could run a normal menu-refresh probe first. That probe
+had automatic recovery disabled, failed against the stale RFCOMM session, and
+set the 15-second probe throttle; the scheduled initial probe then never got
+the chance to perform its one Bluetooth reset. The user consequently had to
+find the manual Debugging Tools recovery action.
+
+`DivoomMenuBar` now tracks whether the initial end-to-end health check has
+completed independently of the scheduled timer. Whichever probe actually runs
+first during startup retains the existing one-shot recovery privilege. The
+user directly confirmed a fresh app launch reached the full Ready diamond and
+that brightness changed on the physical MiniToo without using Debugging Tools.
+
 ## Noise Meter capture (2026-07-12)
 
 Official-app Start → short run → Stop was captured and decoded with the raw
 btsnoop-capable `parse_divoom_spp.py` path. Noise Meter is tool `2`:
 `0x71 [2]` reads it; `0x72 [2,1]` starts it; `0x72 [2,2]` stops it. The raw
 capture is local-only at `../captures/noise-meter-2026-07-12.cfa.curf`.
+
+**Hardware validation completed (2026-07-12):** the native Control Center's
+Start and Stop controls were directly tested on the physical MiniToo. It
+entered the device-side noise meter, reacted to nearby sound through its own
+microphone, and stopped correctly. The final UI intentionally keeps only an
+explanatory text note and a large start/stop control; it does not present a
+Mac microphone indicator or a numeric level the capture does not support.
 
 ## Pixel Slot game launch capture (2026-07-12)
 
@@ -969,3 +1013,22 @@ physical joystick press to dismiss. This proves alarm scheduling/execution is
 device-local once configured, not a phone-side timer. The test slot was then
 confirmed disabled. The local-only capture is
 `../captures/alarm-fire-2026-07-12.cfa.curf`.
+
+## Future integration: first-class AppleScript support (requested 2026-07-12)
+
+The native app does **not** currently expose an AppleScript dictionary (`.sdef`)
+or a documented `tell application "Divoom MiniToo"` surface. The existing
+README "Integration API" is a developer-facing subprocess/TCP packet API, not
+a stable automation contract and not suitable as the normal user workflow.
+
+Future work should investigate a deliberately small AppleScript dictionary,
+backed by the same app-side command paths as the menu and Control Center. It
+should expose only capture-derived, user-facing operations and state queries,
+for example: opening Control Center; reporting Bluetooth/control/battery
+state; setting brightness; screen on/off; activating a confirmed custom face;
+starting/stopping confirmed tools; and requesting a safe media-send workflow.
+Commands need clear completion/error semantics and must not bypass the
+project's opcode safety rules, Bluetooth discovery/cached-MAC policy, or
+one-shot recovery safeguards. Prefer an explicit versioned scripting API over
+fragile UI scripting; decide separately whether Shortcuts/App Intents should
+share that command layer.

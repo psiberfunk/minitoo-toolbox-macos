@@ -604,9 +604,9 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
     /// disappear together without touching the grid layout.
     var isImplemented: Bool {
         switch self {
-        case .sendMedia, .whiteNoise, .customFaces, .photoAlbum, .atmosphere, .deviceSettings:
+        case .sendMedia, .noiseMeter, .stopwatch, .whiteNoise, .customFaces, .photoAlbum, .atmosphere, .deviceSettings:
             return true
-        case .noiseMeter, .scoreboard, .stopwatch, .countdown, .alarms, .games:
+        case .scoreboard, .countdown, .alarms, .games:
             return false
         }
     }
@@ -646,42 +646,70 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
     }
 }
 
-/// The UI landing place for the MiniToo's onboard noise-meter feature.
-///
-/// This is intentionally presentation-only for now: the command sequence
-/// currently exists only as unverified APK-derived research.  Keeping the
-/// controls visibly unavailable prevents the UI from promising a Mac-mic
-/// meter or sending an un-captured command to the device.  Once an Android
-/// HCI capture establishes the protocol, this view becomes the home for its
-/// on/off and level display without needing another navigation redesign.
+/// Controls the MiniToo's onboard noise meter (tool 2). The capture establishes
+/// start and stop, but not a reliable numeric-level readback, so the UI never
+/// presents a Mac-side meter or a fabricated decibel value as device state.
+final class NoiseMeterModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+    @Published var isRunning = false
+    @Published var status = "Noise Meter controls ready."
+    @Published var isBusy = false
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+    }
+
+    func setRunning(_ running: Bool) {
+        guard app.isDaemonRunning() else {
+            status = "Control service is not running."
+            return
+        }
+        isBusy = true
+        status = running ? "Starting Noise Meter…" : "Stopping Noise Meter…"
+        // Capture-derived SPP_SET_TOOL_INFO (0x72), tool 2:
+        // [2, 1] = start; [2, 2] = stop.
+        let packet = DivoomRawFrame.build(cmd: 0x72, body: Data([2, running ? 1 : 2]))
+        let path = DivoomRawFrame.writePacketsFile(packet, name: running ? "noise-meter-start" : "noise-meter-stop", in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                let failed = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                guard !failed else {
+                    self.status = "Noise Meter issue: \(result)"
+                    return
+                }
+                self.isRunning = running
+                self.status = running ? "Noise Meter Running" : "Noise Meter Stopped"
+            }
+        }
+    }
+}
+
 struct NoiseMeterView: View {
+    @ObservedObject var model: NoiseMeterModel
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Noise Meter", systemImage: "waveform.badge.mic")
                 .font(.headline)
 
-            HStack(spacing: 14) {
-                Image(systemName: "speaker.wave.3")
-                    .font(.system(size: 34))
-                    .foregroundColor(.secondary)
-                    .frame(width: 52, height: 52)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.gray.opacity(0.12)))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Uses the MiniToo's onboard microphone")
-                        .font(.callout)
-                    Text("No Mac microphone access is needed.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Uses the MiniToo's onboard microphone")
+                    .font(.callout)
             }
 
-            Divider()
-
             HStack(spacing: 8) {
-                Image(systemName: "wrench.and.screwdriver")
-                    .foregroundColor(.secondary)
-                Text("This feature isn’t implemented yet.")
+                Button(action: { model.setRunning(!model.isRunning) }) {
+                    Image(systemName: model.isRunning ? "stop.fill" : "play.fill")
+                        .font(.system(size: 38, weight: .semibold))
+                        .frame(width: 62, height: 54)
+                }
+                .accessibilityLabel(model.isRunning ? "Stop Noise Meter" : "Start Noise Meter")
+                .help(model.isRunning ? "Stop Noise Meter" : "Start Noise Meter")
+                .disabled(model.isBusy)
+                if model.isBusy { ProgressView().controlSize(.small) }
+                Text(model.status)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -746,25 +774,100 @@ struct ScoreboardView: View {
     }
 }
 
+/// Control surface for the MiniToo's device-side stopwatch (tool 0).
+///
+/// The Android HCI capture establishes `[0, 1]` Start, `[0, 0]` Pause, and
+/// `[0, 2]` Reset. It does not establish a trustworthy elapsed-time readback,
+/// so this deliberately reports the action/state we sent instead of displaying
+/// a made-up Mac-side clock as though it were device state.
+final class StopwatchModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+    @Published var isRunning = false
+    @Published var status = "Stopwatch controls ready."
+    @Published var isBusy = false
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+    }
+
+    func start() {
+        send(value: 1, running: true, progress: "Starting stopwatch…", success: "Stopwatch Running")
+    }
+
+    func pause() {
+        send(value: 0, running: false, progress: "Pausing stopwatch…", success: "Stopwatch Stopped")
+    }
+
+    func reset() {
+        send(value: 2, running: false, progress: "Resetting stopwatch…", success: "Stopwatch Reset")
+    }
+
+    private func send(value: UInt8, running: Bool, progress: String, success: String) {
+        guard app.isDaemonRunning() else {
+            status = "Control service is not running."
+            return
+        }
+        isBusy = true
+        status = progress
+        // Capture-derived SPP_SET_TOOL_INFO (0x72), tool 0:
+        // [0, 1] = start; [0, 0] = pause; [0, 2] = reset.
+        let packet = DivoomRawFrame.build(cmd: 0x72, body: Data([0, value]))
+        let name: String
+        switch value {
+        case 1: name = "stopwatch-start"
+        case 2: name = "stopwatch-reset"
+        default: name = "stopwatch-pause"
+        }
+        let path = DivoomRawFrame.writePacketsFile(packet, name: name, in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                let failed = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                guard !failed else {
+                    self.status = "Stopwatch issue: \(result)"
+                    return
+                }
+                self.isRunning = running
+                self.status = success
+            }
+        }
+    }
+}
+
 struct StopwatchView: View {
+    @ObservedObject var model: StopwatchModel
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Stopwatch", systemImage: "stopwatch")
                 .font(.headline)
-            Text("Start, stop, and reset a device-side elapsed timer.")
+            Text("Controls the MiniToo's own stopwatch.")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            Text("00:00.0")
-                .font(.system(size: 38, weight: .medium, design: .monospaced))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.gray.opacity(0.12)))
             HStack {
-                Button("Start") {}.disabled(true)
-                Button("Reset") {}.disabled(true)
-                Spacer()
+                Button(action: { model.reset() }) {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .accessibilityLabel("Reset stopwatch")
+                .help("Reset stopwatch")
+                .disabled(model.isBusy)
+
+                Button(action: { model.isRunning ? model.pause() : model.start() }) {
+                    Image(systemName: model.isRunning ? "pause.fill" : "play.fill")
+                }
+                .accessibilityLabel(model.isRunning ? "Pause stopwatch" : "Start stopwatch")
+                .help(model.isRunning ? "Pause stopwatch" : "Start stopwatch")
+                .disabled(model.isBusy)
             }
-            PendingProtocolNotice()
+            .font(.system(size: 34, weight: .semibold))
+
+            HStack(spacing: 8) {
+                if model.isBusy { ProgressView().controlSize(.small) }
+                Text(model.status)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .frame(width: 325, alignment: .leading)
         .padding(20)
@@ -1618,6 +1721,8 @@ struct ControlCenterView: View {
     @ObservedObject var photoAlbumModel: PhotoAlbumModel
     @ObservedObject var atmosphereModel: AtmosphereModel
     @ObservedObject var deviceSettingsModel: DeviceSettingsModel
+    @ObservedObject var stopwatchModel: StopwatchModel
+    @ObservedObject var noiseMeterModel: NoiseMeterModel
     @State private var selection: ControlCenterFunction?
 
     var body: some View {
@@ -1726,9 +1831,9 @@ struct ControlCenterView: View {
     private func detailView(for function: ControlCenterFunction) -> some View {
         switch function {
         case .sendMedia: SendMediaView(model: sendModel)
-        case .noiseMeter: NoiseMeterView()
+        case .noiseMeter: NoiseMeterView(model: noiseMeterModel)
         case .scoreboard: ScoreboardView()
-        case .stopwatch: StopwatchView()
+        case .stopwatch: StopwatchView(model: stopwatchModel)
         case .countdown: CountdownView()
         case .alarms: AlarmsView()
         case .games: GamesView()
@@ -1760,7 +1865,9 @@ extension DivoomMenuBar {
             self.atmosphereModel = atmosphereModel
             let deviceSettingsModel = DeviceSettingsModel(app: self)
             self.deviceSettingsModel = deviceSettingsModel
-            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor, photoAlbumModel: photoAlbumModel, atmosphereModel: atmosphereModel, deviceSettingsModel: deviceSettingsModel))
+            let stopwatchModel = StopwatchModel(app: self)
+            let noiseMeterModel = NoiseMeterModel(app: self)
+            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor, photoAlbumModel: photoAlbumModel, atmosphereModel: atmosphereModel, deviceSettingsModel: deviceSettingsModel, stopwatchModel: stopwatchModel, noiseMeterModel: noiseMeterModel))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Divoom Control Center"
             window.styleMask = [.titled, .closable, .miniaturizable]

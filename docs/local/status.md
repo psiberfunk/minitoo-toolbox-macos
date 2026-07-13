@@ -28,24 +28,23 @@ this order. They are APK-decoded only at this point: capture the official
 app's traffic and obtain direct user hardware confirmation before marking any
 one working.
 
-1. **Noise Meter** — Swift/Control Center navigation shell added 2026-07-11:
-   an icon and explanatory, non-operational detail view establish the intended
-   UX and explicitly state it uses the MiniToo's own onboard microphone (never
-   the Mac's). The control protocol is still APK-decoded only; capture the
-   official app's traffic and obtain direct hardware confirmation before
-   enabling any device command. Until then, this and every other prototype
-   tile is visibly dimmed, badged **Coming Soon**, and non-clickable from the
-   Functions grid; `ControlCenterFunction.isImplemented` is the single
-   removal switch when each capture-derived implementation lands.
+1. **Noise Meter** — Done, capture-derived and hardware-tested 2026-07-12.
+   Uses the MiniToo's onboard microphone (never the Mac's). The native Control
+   Center uses tool-2 `0x72` writes `[2,1]` Start and `[2,2]` Stop, directly
+   observed and acknowledged in Android HCI traffic; the user directly
+   confirmed both actions work on the physical MiniToo. No numeric sound-level
+   readback is exposed because the capture does not establish one.
 2. **Scoreboard** — Swift/Control Center icon and disabled UX prototype added
    2026-07-11 (two three-digit scores, reset, on/off). Still APK-decoded only;
    no device command is enabled pending capture and hardware validation.
 3. **Countdown Timer** — Swift/Control Center icon and disabled UX prototype
    added 2026-07-11 (duration, start, reset). Still APK-decoded only; no device
    command is enabled pending capture and hardware validation.
-4. **Stopwatch** — Swift/Control Center icon and disabled UX prototype added
-   2026-07-11 (start, stop, reset). Still APK-decoded only; no device command
-   is enabled pending capture and hardware validation.
+4. **Stopwatch** — Done, capture-derived and hardware-tested 2026-07-12.
+   The native Control Center uses tool-0 `0x72` writes `[0,1]` Start,
+   `[0,0]` Pause, and `[0,2]` Reset, each directly observed and acknowledged
+   in Android HCI traffic. The user directly confirmed all three controls
+   work on the physical MiniToo.
 5. **Alarms** — Swift/Control Center icon and disabled UX prototype added
    2026-07-11 (alarm list and add action). Still APK-decoded only; no device
    command is enabled pending capture and hardware validation.

@@ -57,7 +57,12 @@ def parse_btsnoop(path: Path):
         if len(assembled) < 4 + l2_len:
             continue
         del acl_parts[key]
-        if cid != 0x0041 or l2_len < 4:  # MiniToo RFCOMM CID in these captures
+        # L2CAP assigns dynamic CIDs independently at each endpoint.  They
+        # vary across reconnects (e.g. 0x0041 in one direction and 0x006b in
+        # another post-reboot session), so do not mistake a prior capture's
+        # CID for protocol.  Reject only fixed/signalling CIDs; the RFCOMM
+        # UIH check below identifies the actual stream safely.
+        if cid < 0x0040 or l2_len < 4:
             continue
         rf = assembled[4 : 4 + l2_len]
         address, control, length0 = rf[:3]
