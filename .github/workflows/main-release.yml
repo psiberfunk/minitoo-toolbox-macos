@@ -76,6 +76,12 @@ jobs:
           set -o pipefail
           CHANNEL="${{ inputs.release_channel == 'personal-transition' && 'personal' || 'main' }}"
           VERSION_PREFIX="${{ inputs.release_channel == 'personal-transition' && '0.1.0-alpha' || '0.2.0-alpha' }}"
+          # Sparkle compares CFBundleVersion, not CFBundleShortVersionString.
+          # Legacy public builds reached at least build 39 before the renamed
+          # repository began a new Actions run-number sequence. Keep all
+          # post-rename builds above that sequence so legacy Main clients can
+          # discover the identity-migration release.
+          RELEASE_BUILD_NUMBER=$((1000 + GITHUB_RUN_NUMBER))
           TRANSITION_FEED_URL=""
           TRANSITION_CHANNEL=""
           if [[ "$CHANNEL" == "personal" ]]; then
@@ -84,7 +90,7 @@ jobs:
           fi
           DIVOOM_ARCHS=${{ matrix.arch }} \
           DIVOOM_APP_VERSION="${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" \
-          DIVOOM_BUILD_VERSION="${GITHUB_RUN_NUMBER}" \
+          DIVOOM_BUILD_VERSION="$RELEASE_BUILD_NUMBER" \
           DIVOOM_SOURCE_REPOSITORY="${GITHUB_REPOSITORY}" \
           DIVOOM_SOURCE_BRANCH="$CHANNEL" \
           DIVOOM_UPDATE_CHANNEL="$CHANNEL" \

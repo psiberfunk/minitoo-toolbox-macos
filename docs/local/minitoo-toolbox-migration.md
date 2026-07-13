@@ -17,6 +17,9 @@ rebase, force-push, or mix unrelated feature work into these commits.
 2. Existing Main installations continue to reach their signed `main` feed when
    the GitHub repository moves; GitHub's old URL redirect is relied on but must
    be tested from an installed app before old release assets are retired.
+   Their replacement must use a `CFBundleVersion` above the legacy public
+   high-water mark; Sparkle compares that build number rather than the
+   marketing version string.
 3. The renamed app imports the old `local.divoom.minitoo` defaults domain once,
    without overwriting values a user has already set in the new app.
 4. The old `~/Library/Application Support/DivoomMiniToo` directory moves only
@@ -90,6 +93,15 @@ upstream credit, legacy-user bridge guidance, and release-cleanup rules.
 The neutral README acknowledgement follow-up is `4410da4`; it is Markdown-only
 and intentionally did not publish a new application release. Do not remove
 `personal-latest` or its bridge assets.
+
+### Phase 4a — legacy Main build-number bridge (in progress)
+
+A real pre-rename Main app at `0.1.0-alpha.39` reported the renamed
+`0.2.0-alpha.5` release as older because the latter used `CFBundleVersion` 5.
+The release workflow now assigns post-rename builds `1000 + GITHUB_RUN_NUMBER`
+to make the numeric ordering unambiguous. Publish and monitor that bridge
+release, inspect the appcast for a build number above 39, then repeat the
+installed-app update test. This is not a Personal-channel change.
 
 ### Phase 5 — retirement decision (explicit later decision)
 
