@@ -29,7 +29,7 @@ rebase, force-push, or mix unrelated feature work into these commits.
 
 ## Phase map and handoff state
 
-### Phase 1 — local app identity and data import (current)
+### Phase 1 — local app identity and data import (complete: `da3dd3f`)
 
 Scope: Swift package product, bundle/display/executable names, app-support
 directory, one-time preference import, DMG settings, CI artifact names,
@@ -49,31 +49,42 @@ Required handoff note: record commit ID, test result, and every intentionally
 unchanged old-name reference. Do not use a broad search/replace after this
 phase.
 
-### Phase 2 — installed-app migration validation
+### Phase 2 — installed-app migration validation (pending user observation)
 
 Scope: use a real installed pre-rename Main app to install the renamed build.
 Confirm preferences/device address, update consent, UI preferences, and logs
 survive; then confirm Main feed lookup works with the changed app identity.
 
-This requires user observation. Until it is complete, do not delete old Main
-release assets or claim cross-identity updating works.
+This requires user observation. Until it is complete, do not claim
+cross-identity updating works. The legacy Personal bridge remains intact; old
+Main feed URLs are retained through GitHub's repository redirect, while the
+rolling release may remove superseded old-name download assets.
 
-### Phase 3 — GitHub repository rename
+### Phase 3 — GitHub repository rename (complete)
 
 Scope: rename to `psiberfunk/minitoo-toolbox-macos`, update local `fork` URL,
 verify `origin` remains the upstream comparison remote, and inspect GitHub
 Actions/release feeds after the redirect. Do this only from a clean worktree
-at the committed Phase 2 tip.
+at a committed migration tip.
 
 Required checks: GitHub default branch remains `main`; old release/feed URLs
 redirect; new workflow builds embed the new repository; `main-latest` is
 published successfully. Monitor the full workflow to completion.
 
-### Phase 4 — post-rename release and public audit
+### Phase 4 — post-rename release and public audit (in progress)
 
 Scope: publish one renamed Main release, check release asset/appcast URLs,
 update public GitHub description/topics, and run a focused stale-public-name
 audit. Retain historical/protocol/upstream references that are accurate.
+
+Completed evidence: repository renamed; `fork` points to the new repository;
+the former feed URL returned a 301 to the new `main-latest` appcast; workflow
+run `29255939905` completed successfully; the appcast is `MiniToo Toolbox`
+version `0.2.0-alpha.5` and points to the new immutable update archive.
+
+Next committed checkpoint: make stale old-name rolling-release asset removal
+durable, publish that cleanup through CI, then verify the public release,
+description, and topics. Do not remove `personal-latest` or its bridge assets.
 
 ### Phase 5 — retirement decision (explicit later decision)
 

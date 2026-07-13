@@ -211,13 +211,18 @@ jobs:
             gh release create "$UPDATE_TAG" "update-feed/MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.zip" --target "$GITHUB_SHA" --title "${CHANNEL} update ${GITHUB_RUN_NUMBER}" --prerelease --notes "Immutable Sparkle update archive for the ${CHANNEL} channel."
           fi
           if gh release view "${CHANNEL}-latest" >/dev/null 2>&1; then
-            # The user-facing artifact changed from ZIP to DMG. Remove stale
-            # ZIP assets so each rolling release has one unambiguous download.
-            for stale_asset in MiniToo-Toolbox-macos-universal.zip MiniToo-Toolbox-macos-universal.zip.sha256; do
+            # The user-facing artifact changed from ZIP to DMG and was renamed
+            # from Divoom MiniToo to MiniToo Toolbox. Keep the rolling release
+            # unambiguous for both new visitors and old updater feed URLs.
+            for stale_asset in \
+              MiniToo-Toolbox-macos-universal.zip \
+              MiniToo-Toolbox-macos-universal.zip.sha256 \
+              Divoom-MiniToo-macos-universal.dmg \
+              Divoom-MiniToo-macos-universal.dmg.sha256; do
               gh release delete-asset "${CHANNEL}-latest" "$stale_asset" --yes || true
             done
             gh release view "${CHANNEL}-latest" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
-              if [[ "$asset" == MiniToo-Toolbox-macos-universal-update-*.md && "$asset" != "MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.md" ]]; then
+              if [[ ( "$asset" == MiniToo-Toolbox-macos-universal-update-*.md || "$asset" == Divoom-MiniToo-macos-universal-update-*.md ) && "$asset" != "MiniToo-Toolbox-macos-universal-update-${GITHUB_RUN_NUMBER}.md" ]]; then
                 gh release delete-asset "${CHANNEL}-latest" "$asset" --yes
               fi
             done
