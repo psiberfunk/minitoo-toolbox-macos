@@ -588,6 +588,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
     case scoreboard
     case stopwatch
     case countdown
+    case timeSync
     case alarms
     case games
     case whiteNoise
@@ -604,9 +605,9 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
     /// disappear together without touching the grid layout.
     var isImplemented: Bool {
         switch self {
-        case .sendMedia, .noiseMeter, .stopwatch, .whiteNoise, .customFaces, .photoAlbum, .atmosphere, .deviceSettings:
+        case .sendMedia, .noiseMeter, .stopwatch, .countdown, .timeSync, .games, .whiteNoise, .customFaces, .photoAlbum, .atmosphere, .deviceSettings:
             return true
-        case .scoreboard, .countdown, .alarms, .games:
+        case .scoreboard, .alarms:
             return false
         }
     }
@@ -618,6 +619,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
         case .scoreboard: return "Scoreboard"
         case .stopwatch: return "Stopwatch"
         case .countdown: return "Countdown"
+        case .timeSync: return "Time Sync"
         case .alarms: return "Alarms"
         case .games: return "Games"
         case .whiteNoise: return "White Noise"
@@ -635,6 +637,7 @@ enum ControlCenterFunction: String, CaseIterable, Identifiable {
         case .scoreboard: return "rectangle.3.group"
         case .stopwatch: return "stopwatch"
         case .countdown: return "timer"
+        case .timeSync: return "clock.arrow.circlepath"
         case .alarms: return "alarm"
         case .games: return "gamecontroller"
         case .whiteNoise: return "waveform"
@@ -874,28 +877,432 @@ struct StopwatchView: View {
     }
 }
 
+/// Control surface for the MiniToo's device-side Countdown timer (tool 3).
+///
+/// The official-app HCI capture establishes `[3, active, minutes, seconds]`:
+/// `[3, 1, 1, 0]` starts one minute and `[3, 0, 1, 0]` stops/resets it.
+/// The MiniToo has a physical pause button, but its corresponding protocol
+/// event was not isolated, so this intentionally offers only the official
+/// app's captured Start and Stop/Reset actions.
+final class CountdownModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+    /// Stored as seconds to make the one-field mm:ss editor and its stepper
+    /// unambiguous. The captured wire format still sends separate bytes.
+    @Published var durationSeconds = 60
+    @Published var isRunning = false
+    @Published var status = "Choose a duration, then start the timer."
+    @Published var isBusy = false
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+    }
+
+    func start() { send(active: true) }
+    func stopAndReset() { send(active: false) }
+
+    private func send(active: Bool) {
+        guard app.isDaemonRunning() else {
+            status = "Control service is not running."
+            return
+        }
+        isBusy = true
+        status = active ? "Starting countdown…" : "Stopping and resetting countdown…"
+        // Capture-derived SPP_SET_TOOL_INFO (0x72), tool 3:
+        // [3, 1, minutes, seconds] = start; [3, 0, minutes, seconds] = stop/reset.
+        let packet = DivoomRawFrame.build(cmd: 0x72, body: Data([3, active ? 1 : 0, UInt8(minutes), UInt8(seconds)]))
+        let name = active ? "countdown-start" : "countdown-stop-reset"
+        let path = DivoomRawFrame.writePacketsFile(packet, name: name, in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                let failed = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                guard !failed else {
+                    self.status = "Countdown issue: \(result)"
+                    return
+                }
+                self.isRunning = active
+                self.status = active ? "Countdown Running (\(self.minutes):\(String(format: "%02d", self.seconds)))" : "Countdown Stopped and Reset"
+            }
+        }
+    }
+
+    var minutes: Int { durationSeconds / 60 }
+    var seconds: Int { durationSeconds % 60 }
+
+    static let maximumDurationSeconds = 99 * 60 + 59
+
+    func setDuration(seconds: Int) {
+        durationSeconds = min(max(seconds, 1), Self.maximumDurationSeconds)
+    }
+
+    var formattedDuration: String {
+        String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    /// Accepts only a numeric mm:ss form and bounds the result to 00:01–99:59.
+    static func parseDuration(_ text: String) -> Int? {
+        let pieces = text.split(separator: ":", omittingEmptySubsequences: false)
+        guard pieces.count == 2,
+              let minutes = Int(pieces[0]), let seconds = Int(pieces[1]),
+              (0...99).contains(minutes), (0...59).contains(seconds) else { return nil }
+        let result = minutes * 60 + seconds
+        return result > 0 ? result : nil
+    }
+
+    /// Enforces the editor's numeric MM:SS shape live: optional two-digit
+    /// minutes, one colon, and seconds constrained to 00–59.
+    static func sanitizedDurationInput(_ input: String) -> String {
+        var result = ""
+        var sawColon = false
+        var minuteDigits = 0
+        var secondDigits = 0
+        for character in input {
+            if character == ":", !sawColon {
+                result.append(character)
+                sawColon = true
+                continue
+            }
+            guard character.isNumber else { continue }
+            if !sawColon {
+                guard minuteDigits < 2 else { continue }
+                result.append(character)
+                minuteDigits += 1
+            } else {
+                guard secondDigits < 2 else { continue }
+                guard secondDigits > 0 || character <= "5" else { continue }
+                result.append(character)
+                secondDigits += 1
+            }
+        }
+        return result
+    }
+}
+
 struct CountdownView: View {
+    @ObservedObject var model: CountdownModel
+    @State private var durationText = "01:00"
+    @FocusState private var durationFieldFocused: Bool
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Countdown", systemImage: "timer")
                 .font(.headline)
-            Text("Set a duration, then start or stop the device-side timer.")
+            Text("Runs the MiniToo's own timer. Stopping ends and resets it.")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            HStack(spacing: 8) {
-                Picker("Minutes", selection: .constant(5)) {
-                    Text("5 min").tag(5)
-                }
+            Text("Duration (MM:SS, 00:01–99:59)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack(spacing: 4) {
+                TextField("MM:SS", text: $durationText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.title3, design: .monospaced))
+                    .multilineTextAlignment(.center)
+                    .frame(width: 92)
+                    .focused($durationFieldFocused)
+                    .onSubmit { commitDurationText() }
+                    .onChange(of: durationText) { newValue in
+                        let validInput = CountdownModel.sanitizedDurationInput(newValue)
+                        if validInput != newValue { durationText = validInput }
+                    }
+                    .disabled(model.isBusy || model.isRunning)
+                Stepper("Countdown duration", value: Binding(
+                    get: { model.durationSeconds },
+                    set: { model.setDuration(seconds: $0); durationText = model.formattedDuration }
+                ), in: 1...CountdownModel.maximumDurationSeconds)
                 .labelsHidden()
-                .frame(width: 100)
-                .disabled(true)
-                Button("Start") {}.disabled(true)
-                Button("Reset") {}.disabled(true)
+                .disabled(model.isBusy || model.isRunning)
+                Button(action: { model.isRunning ? model.stopAndReset() : model.start() }) {
+                    Image(systemName: model.isRunning ? "stop.fill" : "play.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .frame(width: 42, height: 34)
+                }
+                .accessibilityLabel(model.isRunning ? "Stop and reset countdown" : "Start countdown")
+                .help(model.isRunning ? "Stop and reset countdown" : "Start countdown")
+                .disabled(model.isBusy || (!model.isRunning && CountdownModel.parseDuration(durationText) == nil))
             }
-            PendingProtocolNotice()
+            HStack(spacing: 8) {
+                if model.isBusy { ProgressView().controlSize(.small) }
+                Text(model.status)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .frame(width: 325, alignment: .leading)
         .padding(20)
+        .onAppear { durationText = model.formattedDuration }
+        .onChange(of: durationFieldFocused) { focused in
+            if !focused { commitDurationText() }
+        }
+    }
+
+    private func commitDurationText() {
+        guard let seconds = CountdownModel.parseDuration(durationText) else {
+            durationText = model.formattedDuration
+            return
+        }
+        model.setDuration(seconds: seconds)
+        durationText = model.formattedDuration
+    }
+}
+
+/// Sends the MiniToo's captured raw clock-set command. The MiniToo does not
+/// provide a clock read-back or application-level ACK, so the UI records a
+/// local submission only. The editable date deliberately supports a visible
+/// human test (e.g. choose five minutes ahead, verify, then restore Now).
+final class ClockSyncModel: ObservableObject {
+    static let automaticSyncKey = "DivoomAutomaticClockSyncEnabled"
+    static let automaticSyncInterval: TimeInterval = 10 * 60
+    unowned let app: DivoomMenuBar
+    @Published var selectedDate = Date()
+    @Published var customHourText: String
+    @Published var customMinuteText: String
+    @Published var customSecondText: String
+    @Published var status = "Choose the time to set on the MiniToo."
+    @Published var isBusy = false
+    @Published var lastSubmission: Date?
+    @Published private(set) var automaticSyncEnabled: Bool
+    private var automaticSyncTimer: Timer?
+    private var systemClockObserver: NSObjectProtocol?
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+        self.automaticSyncEnabled = UserDefaults.standard.bool(forKey: Self.automaticSyncKey)
+        let now = Date()
+        let components = Calendar.current.dateComponents([.hour, .minute, .second], from: now)
+        self.customHourText = String(format: "%02d", components.hour ?? 0)
+        self.customMinuteText = String(format: "%02d", components.minute ?? 0)
+        self.customSecondText = String(format: "%02d", components.second ?? 0)
+        let saved = UserDefaults.standard.double(forKey: "DivoomLastClockSyncSubmission")
+        lastSubmission = saved > 0 ? Date(timeIntervalSince1970: saved) : nil
+        automaticSyncTimer = Timer.scheduledTimer(withTimeInterval: Self.automaticSyncInterval, repeats: true) { [weak self] _ in
+            self?.performAutomaticSync(reason: "10-minute interval")
+        }
+        systemClockObserver = NotificationCenter.default.addObserver(
+            forName: .NSSystemClockDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.performAutomaticSync(reason: "macOS clock change")
+        }
+    }
+
+    deinit {
+        automaticSyncTimer?.invalidate()
+        if let systemClockObserver { NotificationCenter.default.removeObserver(systemClockObserver) }
+    }
+
+    func syncCurrentMacTime() {
+        sync(date: Date())
+    }
+
+    func setAutomaticSyncEnabled(_ enabled: Bool) {
+        automaticSyncEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.automaticSyncKey)
+        guard enabled else {
+            status = "Automatic sync disabled."
+            return
+        }
+        status = "Automatic sync enabled (every 10 minutes and after macOS clock changes)."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.performAutomaticSync(reason: "enabled")
+        }
+    }
+
+    func syncCustomTime() {
+        guard let time = customTimeComponents else {
+            status = "Enter valid Hour, Minute, and Second values."
+            return
+        }
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
+        components.hour = time.hour
+        components.minute = time.minute
+        components.second = time.second
+        guard let date = Calendar.current.date(from: components) else {
+            status = "That custom date and time is invalid."
+            return
+        }
+        sync(date: date)
+    }
+
+    func adjustCustomTime(by seconds: Int) {
+        guard let time = customTimeComponents else { return }
+        let current = (time.hour ?? 0) * 3600 + (time.minute ?? 0) * 60 + (time.second ?? 0)
+        let adjusted = (current + seconds + 86_400) % 86_400
+        customHourText = String(format: "%02d", adjusted / 3600)
+        customMinuteText = String(format: "%02d", (adjusted % 3600) / 60)
+        customSecondText = String(format: "%02d", adjusted % 60)
+    }
+
+    private func performAutomaticSync(reason: String) {
+        guard automaticSyncEnabled, !isBusy else { return }
+        guard app.isDaemonRunning() else {
+            status = "Automatic sync waiting for control service."
+            return
+        }
+        status = "Automatic sync ((reason))…"
+        sync(date: Date())
+    }
+
+    private func sync(date: Date) {
+        guard app.isDaemonRunning() else {
+            status = "Control service is not running."
+            return
+        }
+        guard let body = Self.clockSetBody(date: date) else {
+            status = "That date is outside the MiniToo clock range."
+            return
+        }
+        isBusy = true
+        status = "Setting MiniToo clock…"
+        // Real Android HCI captures show that the visible setter is raw 0x18,
+        // sent after the app's Device/SetUTC JSON bookkeeping message. Its
+        // eight-byte body is [year % 100, century, month, day, hour, minute,
+        // second, weekday], where Sunday is zero. It needs no account token.
+        let packet = DivoomRawFrame.build(cmd: 0x18, body: body)
+        let path = DivoomRawFrame.writePacketsFile(packet, name: "clock-set", in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                let failed = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                guard !failed else {
+                    self.status = "Clock sync issue: \(result)"
+                    return
+                }
+                self.lastSubmission = date
+                UserDefaults.standard.set(date.timeIntervalSince1970, forKey: "DivoomLastClockSyncSubmission")
+                self.status = "Clock sync submitted for \(Self.displayFormatter.string(from: date))."
+            }
+        }
+    }
+
+    static let displayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    static func clockSetBody(date: Date, calendar: Calendar = .current) -> Data? {
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second, .weekday], from: date)
+        guard let year = components.year, let month = components.month, let day = components.day,
+              let hour = components.hour, let minute = components.minute, let second = components.second,
+              let weekday = components.weekday,
+              (2000...2099).contains(year), (1...12).contains(month), (1...31).contains(day),
+              (0...23).contains(hour), (0...59).contains(minute), (0...59).contains(second)
+        else { return nil }
+        // Calendar weekday is Sunday=1 ... Saturday=7; capture uses Sunday=0.
+        return Data([UInt8(year % 100), UInt8(year / 100), UInt8(month), UInt8(day), UInt8(hour), UInt8(minute), UInt8(second), UInt8(weekday - 1)])
+    }
+
+    var customTimeComponents: DateComponents? {
+        Self.timeComponents(hour: customHourText, minute: customMinuteText, second: customSecondText)
+    }
+
+    static func timeComponents(hour: String, minute: String, second: String) -> DateComponents? {
+        guard hour.count == 2, minute.count == 2, second.count == 2,
+              hour.allSatisfy(\.isNumber), minute.allSatisfy(\.isNumber), second.allSatisfy(\.isNumber),
+              let hour = Int(hour), let minute = Int(minute), let second = Int(second),
+              (0...23).contains(hour), (0...59).contains(minute), (0...59).contains(second)
+        else { return nil }
+        return DateComponents(hour: hour, minute: minute, second: second)
+    }
+
+    /// Keeps a two-digit time component numeric and within its clock range.
+    static func sanitizedTimeComponent(_ input: String, maximum: Character, secondDigitMaximumWhenFirstIsMaximum: Character? = nil) -> String {
+        var result = ""
+        var firstDigit: Character?
+        for character in input {
+            guard character.isNumber, result.count < 2 else { continue }
+            if result.isEmpty {
+                guard character <= maximum else { continue }
+                firstDigit = character
+            } else if firstDigit == maximum,
+                      let secondDigitMaximumWhenFirstIsMaximum,
+                      character > secondDigitMaximumWhenFirstIsMaximum {
+                continue
+            }
+            result.append(character)
+        }
+        return result
+    }
+}
+
+struct ClockSyncView: View {
+    @ObservedObject var model: ClockSyncModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Time Sync", systemImage: "clock.arrow.circlepath")
+                .font(.headline)
+            Text("Set the MiniToo to the Mac's current time, or choose a custom local date and time.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Button("Sync Current Mac Time") { model.syncCurrentMacTime() }
+                .disabled(model.isBusy)
+            Toggle("Automatically sync every 10 minutes", isOn: Binding(
+                get: { model.automaticSyncEnabled },
+                set: { model.setAutomaticSyncEnabled($0) }
+            ))
+                .toggleStyle(.checkbox)
+                .disabled(model.isBusy)
+                .help("Also syncs when macOS reports that its system clock changed. This does not poll the MiniToo.")
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Custom Time")
+                    .font(.subheadline)
+                DatePicker("Date", selection: $model.selectedDate, displayedComponents: .date)
+                    .datePickerStyle(.field)
+                    .disabled(model.isBusy)
+                HStack(spacing: 4) {
+                    Text("Time:")
+                    timeComponentField("HH", text: $model.customHourText, maximum: "2", secondMaximum: "3")
+                    Text(":").foregroundColor(.secondary)
+                    timeComponentField("MM", text: $model.customMinuteText, maximum: "5")
+                    Text(":").foregroundColor(.secondary)
+                    timeComponentField("SS", text: $model.customSecondText, maximum: "5")
+                    Stepper("Adjust time", onIncrement: { model.adjustCustomTime(by: 1) }, onDecrement: { model.adjustCustomTime(by: -1) })
+                        .labelsHidden()
+                        .disabled(model.isBusy || model.customTimeComponents == nil)
+                }
+                Button("Sync Custom Time") { model.syncCustomTime() }
+                    .disabled(model.isBusy)
+            }
+            HStack(spacing: 8) {
+                if model.isBusy { ProgressView().controlSize(.small) }
+                Text(model.status)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let lastSubmission = model.lastSubmission {
+                Text("Last submission: \(ClockSyncModel.displayFormatter.string(from: lastSubmission))")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            Text("Clock sync is one-way: you can set the MiniToo’s clock, but the app cannot read it back.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(width: 340, alignment: .leading)
+        .padding(20)
+    }
+
+    @ViewBuilder
+    private func timeComponentField(_ placeholder: String, text: Binding<String>, maximum: Character, secondMaximum: Character? = nil) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.roundedBorder)
+            .font(.system(.body, design: .monospaced))
+            .multilineTextAlignment(.center)
+            .frame(width: 40)
+            .onChange(of: text.wrappedValue) { newValue in
+                let sanitized = ClockSyncModel.sanitizedTimeComponent(newValue, maximum: maximum, secondDigitMaximumWhenFirstIsMaximum: secondMaximum)
+                if sanitized != newValue { text.wrappedValue = sanitized }
+            }
+            .disabled(model.isBusy)
     }
 }
 
@@ -924,34 +1331,73 @@ struct AlarmsView: View {
     }
 }
 
+/// Narrow game launcher: only Pixel Slot's launch packet was captured. The
+/// game itself is started and controlled with the MiniToo's physical knob;
+/// no generic game ID or software exit command is inferred here.
+final class GamesModel: ObservableObject {
+    unowned let app: DivoomMenuBar
+    @Published var status = "Pixel Slot is ready to launch."
+    @Published var isBusy = false
+
+    init(app: DivoomMenuBar) {
+        self.app = app
+    }
+
+    func launchPixelSlot() {
+        guard app.isDaemonRunning() else {
+            status = "Control service is not running."
+            return
+        }
+        isBusy = true
+        status = "Launching Pixel Slot…"
+        // Official-app HCI capture: SPP_SET_GAME (0xA0), body [1, 1].
+        let packet = DivoomRawFrame.build(cmd: 0xA0, body: Data([1, 1]))
+        let path = DivoomRawFrame.writePacketsFile(packet, name: "game-pixel-slot", in: app.capturesDir)
+        DivoomRawFrame.submit(packetsPath: path, port: UInt16(app.daemonPort) ?? 40583) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                let failed = result.lowercased().contains("failed") || result.lowercased().contains("error") || result.isEmpty
+                self.status = failed ? "Pixel Slot issue: \(result)" : "Pixel Slot launched — press the MiniToo's physical knob to start."
+            }
+        }
+    }
+}
+
 struct GamesView: View {
+    @ObservedObject var model: GamesModel
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Games", systemImage: "gamecontroller")
                 .font(.headline)
-            Text("Launch one of the MiniToo's built-in games.")
+            Text("Pixel Slot is the only captured game launcher so far.")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            HStack(spacing: 10) {
-                gameTile(icon: "gamecontroller", title: "Game 1")
-                gameTile(icon: "puzzlepiece", title: "Game 2")
-                gameTile(icon: "circle.grid.cross", title: "Game 3")
+            Button(action: { model.launchPixelSlot() }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "gamecontroller.fill")
+                        .font(.system(size: 26))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Launch Pixel Slot")
+                        Text("Then press the MiniToo's knob to start")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            PendingProtocolNotice()
+            .disabled(model.isBusy)
+            HStack(spacing: 8) {
+                if model.isBusy { ProgressView().controlSize(.small) }
+                Text(model.status)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(width: 325, alignment: .leading)
         .padding(20)
-    }
-
-    private func gameTile(icon: String, title: String) -> some View {
-        Button(action: {}) {
-            VStack(spacing: 5) {
-                Image(systemName: icon).font(.title3)
-                Text(title).font(.caption)
-            }
-            .frame(maxWidth: .infinity, minHeight: 58)
-        }
-        .disabled(true)
     }
 }
 
@@ -1568,6 +2014,7 @@ final class DeviceSettingsModel: ObservableObject {
         cache("AutoPowerOff", minutes)
         send(["AutoPowerOff": minutes], statusOnSuccess: minutes == 0 ? "Auto power off: never." : "Auto power off: \(minutes) min.")
     }
+
 }
 
 /// One label+control row, sized to its content instead of a fixed frame --
@@ -1729,6 +2176,9 @@ struct ControlCenterView: View {
     @ObservedObject var deviceSettingsModel: DeviceSettingsModel
     @ObservedObject var stopwatchModel: StopwatchModel
     @ObservedObject var noiseMeterModel: NoiseMeterModel
+    @ObservedObject var countdownModel: CountdownModel
+    @ObservedObject var clockSyncModel: ClockSyncModel
+    @ObservedObject var gamesModel: GamesModel
     @State private var selection: ControlCenterFunction?
 
     var body: some View {
@@ -1840,9 +2290,10 @@ struct ControlCenterView: View {
         case .noiseMeter: NoiseMeterView(model: noiseMeterModel)
         case .scoreboard: ScoreboardView()
         case .stopwatch: StopwatchView(model: stopwatchModel)
-        case .countdown: CountdownView()
+        case .countdown: CountdownView(model: countdownModel)
+        case .timeSync: ClockSyncView(model: clockSyncModel)
         case .alarms: AlarmsView()
-        case .games: GamesView()
+        case .games: GamesView(model: gamesModel)
         case .whiteNoise: WhiteNoiseView(model: whiteNoiseModel)
         case .customFaces: CustomFacesView(model: customFacesModel)
         case .photoAlbum: PhotoAlbumView(model: photoAlbumModel)
@@ -1873,7 +2324,11 @@ extension DivoomMenuBar {
             self.deviceSettingsModel = deviceSettingsModel
             let stopwatchModel = StopwatchModel(app: self)
             let noiseMeterModel = NoiseMeterModel(app: self)
-            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor, photoAlbumModel: photoAlbumModel, atmosphereModel: atmosphereModel, deviceSettingsModel: deviceSettingsModel, stopwatchModel: stopwatchModel, noiseMeterModel: noiseMeterModel))
+            let countdownModel = CountdownModel(app: self)
+            if clockSyncModel == nil { clockSyncModel = ClockSyncModel(app: self) }
+            let clockSyncModel = clockSyncModel!
+            let gamesModel = GamesModel(app: self)
+            let hosting = NSHostingController(rootView: ControlCenterView(sendModel: sendModel, whiteNoiseModel: whiteNoiseModel, customFacesModel: customFacesModel, deviceControlsModel: deviceControlsModel, batteryMonitor: batteryMonitor, photoAlbumModel: photoAlbumModel, atmosphereModel: atmosphereModel, deviceSettingsModel: deviceSettingsModel, stopwatchModel: stopwatchModel, noiseMeterModel: noiseMeterModel, countdownModel: countdownModel, clockSyncModel: clockSyncModel, gamesModel: gamesModel))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Divoom Control Center"
             window.styleMask = [.titled, .closable, .miniaturizable]
@@ -1893,7 +2348,7 @@ extension DivoomMenuBar {
         }
         if isNewWindow {
             // Start at the grid's actual intrinsic size, not the tiny
-            // minimum size. A GeometryReader otherwise sees AppKit's large
+            // minimum size.  A GeometryReader otherwise sees AppKit's large
             // first proposed height and feeds that value back into the window,
             // producing a Control Center that runs off the bottom of screen.
             controlCenterWindow?.setContentSize(ControlCenterView.initialGridContentSize)

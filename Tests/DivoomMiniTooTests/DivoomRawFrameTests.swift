@@ -40,4 +40,55 @@ struct DivoomRawFrameTests {
         #expect(frame[3] == 0x42)
         #expect(frame.count == 7 + body.count)
     }
+
+    @Test func countdownStartUsesCapturedToolThreeBody() {
+        // Android HCI capture: one-minute Countdown start is 0x72 [3,1,1,0].
+        let body = Data([0x03, 0x01, 0x01, 0x00])
+        let frame = DivoomRawFrame.build(cmd: 0x72, body: body)
+        #expect(frame[3] == 0x72)
+        #expect(Data(frame[4..<8]) == body)
+        #expect(UInt16(frame[1]) | (UInt16(frame[2]) << 8) == 7)
+    }
+
+    @Test func countdownDurationAcceptsBoundedNumericTime() {
+        #expect(CountdownModel.parseDuration("01:05") == 65)
+        #expect(CountdownModel.parseDuration("99:59") == 5_999)
+        #expect(CountdownModel.parseDuration("00:00") == nil)
+        #expect(CountdownModel.parseDuration("100:00") == nil)
+        #expect(CountdownModel.parseDuration("01:60") == nil)
+        #expect(CountdownModel.parseDuration("hello") == nil)
+    }
+
+    @Test func countdownDurationSanitizesImpossibleLiveInput() {
+        #expect(CountdownModel.sanitizedDurationInput("01:999") == "01:")
+        #expect(CountdownModel.sanitizedDurationInput("999:00") == "99:00")
+        #expect(CountdownModel.sanitizedDurationInput("ab01:05") == "01:05")
+        #expect(CountdownModel.sanitizedDurationInput("01:59") == "01:59")
+    }
+
+    @Test func customClockTimeRequiresCompleteValidComponents() {
+        let valid = ClockSyncModel.timeComponents(hour: "23", minute: "59", second: "07")
+        #expect(valid?.hour == 23)
+        #expect(valid?.minute == 59)
+        #expect(valid?.second == 7)
+        #expect(ClockSyncModel.timeComponents(hour: "24", minute: "00", second: "00") == nil)
+        #expect(ClockSyncModel.timeComponents(hour: "01", minute: "99", second: "00") == nil)
+        #expect(ClockSyncModel.timeComponents(hour: "01", minute: "02", second: "") == nil)
+    }
+
+    @Test func customClockTimeFiltersNonNumericAndImpossibleValues() {
+        #expect(ClockSyncModel.sanitizedTimeComponent("2a", maximum: "2", secondDigitMaximumWhenFirstIsMaximum: "3") == "2")
+        #expect(ClockSyncModel.sanitizedTimeComponent("23", maximum: "2", secondDigitMaximumWhenFirstIsMaximum: "3") == "23")
+        #expect(ClockSyncModel.sanitizedTimeComponent("29", maximum: "2", secondDigitMaximumWhenFirstIsMaximum: "3") == "2")
+        #expect(ClockSyncModel.sanitizedTimeComponent("7a9", maximum: "5") == "")
+        #expect(ClockSyncModel.sanitizedTimeComponent("59", maximum: "5") == "59")
+    }
+
+    @Test func clockSetPacketMatchesControlledOfficialCapture() throws {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let date = try #require(formatter.date(from: "2026-07-13T08:29:06-04:00"))
+        // Android HCI capture: raw 0x18 body after Device/SetUTC.
+        #expect(ClockSyncModel.clockSetBody(date: date) == Data([26, 20, 7, 13, 8, 29, 6, 1]))
+    }
 }

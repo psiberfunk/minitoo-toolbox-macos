@@ -19,10 +19,12 @@ substantial downstream expansion of the original upstream menu-bar app.
   volume, and auto power-off. The MiniToo does not expose readback for these
   settings, so the app labels the saved values as last sent rather than live
   device state.
-- **MiniToo tools:** Noise Meter and Stopwatch have been hardware-tested.
-  Countdown, manual Time Sync, and the Pixel Slot launcher are capture-derived
-  alpha controls that still need direct device confirmation; Scoreboard and
-  Alarms remain visibly unavailable rather than sending unverified commands.
+- **MiniToo tools:** Noise Meter, Stopwatch, Countdown, the Pixel Slot
+  launcher, and Time Sync have been hardware-tested. Time Sync can set a
+  custom clock value or current Mac time; its optional automatic mode repeats
+  the one-way sync every 10 minutes and after a macOS clock change. Scoreboard
+  and Alarms remain visibly unavailable rather than sending unverified
+  commands.
 - **More resilient setup and status:** scan for and select a MiniToo from the
   app—its Bluetooth address is never hardcoded—then see distinct Bluetooth,
   local-audio, and control-service health states. The app also recovers its

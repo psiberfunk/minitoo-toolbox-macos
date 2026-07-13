@@ -1032,3 +1032,134 @@ project's opcode safety rules, Bluetooth discovery/cached-MAC policy, or
 one-shot recovery safeguards. Prefer an explicit versioned scripting API over
 fragile UI scripting; decide separately whether Shortcuts/App Intents should
 share that command layer.
+
+## Future display ideas: playful and Mac-contextual (requested 2026-07-13)
+
+These are product ideas only. None has a MiniToo packet builder, UI, protocol
+capture, or hardware confirmation yet. Treat every eventual display write as
+new work through the existing **Send Media**/direct screen-buffer path: first
+capture the official app's equivalent behavior when one exists, keep the
+bricking-opcode guard intact, and require direct physical confirmation before
+calling it working.
+
+1. **Clarus the dogcow.** Add an opt-in menu-bar/Control Center action that
+   sends a two-frame, tiny black-and-white dogcow animation: an idle frame and
+   a speaking frame for the old-Mac-style “moooof.” The documentation
+   recreation at [clarus-dogcow-concept.png](assets/clarus-dogcow-concept.png)
+   now follows the classic Clarus side-profile glyph closely; it is a local
+   reference asset, not an official Apple source file. Design the two frames
+   for legibility on the MiniToo's 160×128
+   display (and consider a deliberately pixelated 1-bit treatment), then
+   validate animation timing and visibility on the physical device.
+2. **Frontmost-app icon display.** Offer an opt-in mode that observes
+   macOS frontmost-application changes and writes the newly active app's
+   macOS icon to the MiniToo using the existing direct screen-buffer media
+   pipeline. Use the app's real icon from the running application's bundle;
+   do not build a hardcoded icon catalogue. Coalesce rapid app switches,
+   downscale/crop deliberately to 160×128, and make the state/last update
+   visible in the UI. This needs a privacy-conscious product decision and a
+   clear off switch; merely receiving a macOS activation notification is not
+   proof that the device display changed.
+3. **Periodic screen sharing.** Offer an explicitly enabled, configurable
+   screen-mirroring mode that captures a selected display or window roughly
+   every 5–10 seconds, encodes it for the existing screen-buffer sender, and
+   replaces rather than queues stale frames. It must use macOS's normal Screen
+   Recording permission flow, make the capture target/interval/active status
+   obvious, stop promptly on disable/app exit, and never silently capture.
+   Start with still-image snapshots—not real-time video—and measure encode,
+   Bluetooth-transfer, battery, and failure behavior before promising a
+   cadence. A privacy warning is part of the feature: notifications,
+   passwords, and other sensitive on-screen content can be mirrored to the
+   device.
+
+## Blind implementation batch: Countdown and Time Sync (2026-07-12)
+
+With no MiniToo connected, only already capture-derived behavior was enabled.
+The native Control Center now exposes Countdown (tool 3) with a duration picker
+and captured Start / Stop-and-Reset writes: `0x72 [3,1,minutes,seconds]` and
+`0x72 [3,0,minutes,seconds]`. Physical pause/resume remains absent because its
+protocol event has not been isolated. This is build-verified but **not yet
+hardware-validated**.
+
+Time Sync was moved into its own Control Center screen rather than being a
+one-off Device Settings row. It sends the captured `Device/SetUTC` SPP JSON
+body with both Unix seconds and a host-local `yyyy-MM-dd HH:mm:ss` string. The
+screen defaults to the current Mac local time but allows a deliberate arbitrary
+date/time, which enables a conclusive test: set five minutes ahead, confirm the
+MiniToo display changes, then restore Current Mac Time. The device gives no
+known clock read-back or application ACK, so UI text says "submitted", never
+"synced" or "verified." A disabled `Automatic Sync (Coming Soon)` checkbox
+documents the intended future automation without claiming any background action
+exists. This too is build-verified but **not yet hardware-validated**.
+
+Follow-up hardware testing found that the original native Time Sync submission
+was a no-op. The raw time-sync capture differs from the first native frame in
+two ways: its identity fields are `DeviceId:0`, `Token:576404986`, and
+`UserId:404880831` rather than unrelated `Sys/SetConf` example constants, and
+its command string is literal `Device/SetUTC`. Foundation's JSON serialization
+emits the semantically valid but byte-different `Device\/SetUTC`, making the
+native payload one byte longer than the official HCI frame. The identity fields
+may be irrelevant, while the device may use a fragile literal command matcher;
+neither hypothesis is proved. The next diagnostic build matches the official
+JSON spelling/order exactly while retaining captured identity only temporarily,
+then must be compared against a neutral identity submission before anything is
+distributed. Do not treat account-derived fields as a generic protocol
+requirement.
+
+The MiniToo itself exposes an **Automatic synchronization time** setting. The
+user observed this after the direct, byte-matched `Device/SetUTC` submission
+still had no visible effect. That makes a device-side acceptance gate or a
+connect-time-only synchronization path plausible, but it is not yet evidence
+of either: the captured setting write and a controlled on/off test have not
+been collected. The Control Center therefore only points the user to that
+setting; it must not silently reconnect Bluetooth or claim that enabling it
+will fix Time Sync.
+
+That hypothesis was later disproved by direct testing: raw `0x18` clock-set
+writes work even with the device-side setting off. The macOS app has no reason
+to inspect, require, or mention that setting; it owns its own optional
+automatic-sync schedule.
+
+The controlled Android test (2026-07-13) set the tablet five minutes ahead
+through its normal Settings UI, restarted the official app, and collected its
+HCI log with `adb bugreport` (temporary `/private/tmp/divoom-time-sync-offset.curf`).
+This resolved the mystery: `Device/SetUTC` is only preceding JSON bookkeeping,
+not the visible clock setter. The official app immediately sends raw **opcode
+`0x18`**, whose eight-byte body is `[year % 100, century, month, day, hour,
+minute, second, weekday]`, with Sunday = 0. The deliberately offset official
+session supplied the decisive instance `1a 14 07 0d 08 1d 06 01` for
+2026-07-13 08:29:06 Monday; the earlier capture supplied
+`1a 14 07 0c 11 11 36 00` for 2026-07-12 17:17:54 Sunday. The native Time Sync
+implementation should therefore send only this token-free raw `0x18` frame,
+not account-derived `Device/SetUTC` JSON. Direct hardware testing then
+confirmed that both an arbitrary custom time and Current Mac Time visibly
+changed the MiniToo clock. Manual Time Sync is hardware-confirmed.
+
+Follow-up implementation made that checkbox functional and persisted, default
+off. The `ClockSyncModel` now lives with the menu-bar app rather than the
+Control Center window, so it survives closing the window. When enabled it
+sends the already-confirmed raw `0x18` write every 10 minutes and after
+macOS's `NSSystemClockDidChange` notification. This is a passive operating
+system event, not MiniToo polling; it does not reconnect Bluetooth, and it
+skips a tick while another clock write is in flight. Enabling it schedules an
+immediate one-second-delayed current-time write so the user can verify the
+setting without waiting ten minutes. This background behavior is
+hardware-confirmed: setting a deliberate custom offset and enabling the
+checkbox returned the MiniToo to current Mac time immediately.
+
+Countdown was directly hardware-confirmed working; its UI was then revised
+from two menus to a single numeric `mm:ss` field, with a bounded 00:01–99:59
+range and adjacent up/down stepper arrows. Live input filtering prevents text,
+extra digits, and impossible seconds; that revised UI itself still needs a
+quick usability check.
+
+Scoreboard remains deliberately disabled. The user-facing score increment and
+reset behavior was observed in the official app, but no recoverable captured
+write body remains in local artifacts; do not construct a guessed tool-1
+packet from APK code or memory.
+
+The Games screen now exposes **Pixel Slot only**, using the previously decoded
+official-app packet `0xA0 [1,1]`. Its UI explicitly tells the user to press the
+MiniToo's physical knob after launch; no other game IDs, in-game controls, or
+software return command were added. This is build-verified but **not yet
+hardware-validated**.

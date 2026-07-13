@@ -174,6 +174,9 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var photoAlbumModel: PhotoAlbumModel?
     var atmosphereModel: AtmosphereModel?
     var deviceSettingsModel: DeviceSettingsModel?
+    /// Kept alive independently of the Control Center window so optional
+    /// background clock synchronization continues after that window closes.
+    var clockSyncModel: ClockSyncModel?
     var preferencesWindow: NSWindow?
     var preferencesModel: PreferencesModel?
     var deviceSetupWindow: NSWindow?
@@ -374,6 +377,7 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyPresentationMode()
+        clockSyncModel = ClockSyncModel(app: self)
         configureMainMenu()
         appControlsMenu.delegate = self
         applyMenuBarItemVisibility()

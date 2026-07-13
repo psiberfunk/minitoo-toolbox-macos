@@ -35,11 +35,14 @@ one working.
    confirmed both actions work on the physical MiniToo. No numeric sound-level
    readback is exposed because the capture does not establish one.
 2. **Scoreboard** — Swift/Control Center icon and disabled UX prototype added
-   2026-07-11 (two three-digit scores, reset, on/off). Still APK-decoded only;
-   no device command is enabled pending capture and hardware validation.
-3. **Countdown Timer** — Swift/Control Center icon and disabled UX prototype
-   added 2026-07-11 (duration, start, reset). Still APK-decoded only; no device
-   command is enabled pending capture and hardware validation.
+   2026-07-11 (two three-digit scores, reset, on/off). The UI behavior was
+   observed, but the packet body is not preserved in a recoverable project
+   artifact; it remains disabled rather than guessing a command.
+3. **Countdown Timer** — Capture-derived native control added and
+   hardware-confirmed 2026-07-12. Tool-3 `0x72` writes use
+   `[3,1,minutes,seconds]` to start and `[3,0,minutes,seconds]` to stop/reset.
+   The physical MiniToo pause control remains deliberately unsupported pending
+   an isolated packet capture.
 4. **Stopwatch** — Done, capture-derived and hardware-tested 2026-07-12.
    The native Control Center uses tool-0 `0x72` writes `[0,1]` Start,
    `[0,0]` Pause, and `[0,2]` Reset, each directly observed and acknowledged
@@ -48,9 +51,10 @@ one working.
 5. **Alarms** — Swift/Control Center icon and disabled UX prototype added
    2026-07-11 (alarm list and add action). Still APK-decoded only; no device
    command is enabled pending capture and hardware validation.
-6. **Games** — Swift/Control Center icon and disabled UX prototype added
-   2026-07-11 (built-in game launcher). Still APK-decoded only; no device
-   command is enabled pending capture and hardware validation.
+6. **Games / Pixel Slot** — capture-derived native launch control added and
+   hardware-confirmed 2026-07-12. It sends the observed
+   `0xA0 [1,1]` launcher only. Starting/playing remains a physical-knob action;
+   no other game IDs or software exit command are inferred.
 
 ### Next execution step: capture batch, then implementation
 
@@ -59,19 +63,19 @@ alone. The next work starts with Android Bluetooth HCI-snoop captures of the
 official app, then ports only the observed traffic into the existing Control
 Center shells, followed by direct user hardware confirmation.
 
-1. **Implement and hardware-test the remaining captured tool views:**
-   Scoreboard, then Countdown. Stopwatch and Noise Meter are complete. Keep
+1. **Countdown and manual Time Sync are hardware-confirmed.** Keep
    Countdown's physical pause unsupported until a cleaner capture isolates a
    distinct command/event; its official-app-equivalent Start and Stop/Reset
    surface is the current target. Exit tool views with the MiniToo's physical
-   button; there is no confirmed software return-to-clock command.
+   button; there is no confirmed software return-to-clock command. Automatic
+   clock sync is now an independently confirmed, opt-in enhancement.
 2. **Alarm capture/test session:** capture list/read, add/edit, enable/disable,
    and delete flows. Only after decoding them, perform a deliberate user-owned
    near-future alarm test and directly confirm it fired as expected.
-3. **Games capture session:** capture launching each available official-app
-   game and any exit/return behavior. Do not infer game IDs or send the
-   APK-decoded opcodes until this is observed.
-4. **Implement and verify in order:** Scoreboard, Countdown, Alarms, Games.
+3. **Games capture session:** capture launching each additional official-app
+   game and any exit/return behavior. Pixel Slot may be tested now; do not
+   infer other IDs or send APK-decoded opcodes until each is observed.
+4. **Implement and verify in order:** Scoreboard, Alarms, then further Games.
    Keep each feature disabled until its own capture-derived packet builder and
    user hardware test are complete.
 
@@ -82,26 +86,27 @@ project’s user; do not weaken the send guard or transmit any of those opcodes
 without an explicit capture-first test plan and a hardware power-cycle
 recovery path.
 
-## Time synchronization (to-do)
+## Time synchronization (manual sync confirmed)
 
-The official Android app's real HCI-snoop traffic (not merely APK tracing)
-shows a normal `SPP_JSON` (`0x01`) command, `Device/SetUTC`, sent as part of
-its post-connection startup burst. Its body contains `Utc` as the host's Unix
-time in seconds and `Time` as the host's local `yyyy-MM-dd HH:mm:ss` clock
-string; `DeviceId`, `Token`, and `UserId` use the normal JSON identity fields.
-The APK code corroborates this construction. The capture is
-`../captures/device-settings.cfa.curf`, record 487 (and another send at record
-8116); see `apk-analysis/jadx-out/sources/com/divoom/Divoom/bluetooth/CmdManager.java`.
+The actual MiniToo clock setter is raw opcode `0x18`, with body
+`[year % 100, century, month, day, hour, minute, second, weekday]` and Sunday
+as weekday zero. A controlled Android HCI capture with the tablet deliberately
+five minutes ahead isolated it from the preceding `Device/SetUTC` JSON, which
+is bookkeeping rather than the visible setter. The native Control Center sends
+only the token-free raw frame; no captured Android `DeviceId`, `Token`, or
+`UserId` is used.
 
-Implement a visible **Sync Clock Now** action and last-submitted timestamp in
-the real Device Settings UI, then automatically submit the same command after
-the RFCOMM control connection becomes ready, after Mac wake or a system
-clock/time-zone change, and at a conservative periodic interval while the
-daemon is active. Coalesce duplicate triggers. The MiniToo provides no known
-time readback or ACK for this command, so “last synced” must describe the last
-submission, not proven device state. Before calling it working, deliberately
-test it on hardware and obtain the user's direct visual confirmation that the
-MiniToo clock changes to the Mac's current local time.
+Direct hardware testing on 2026-07-13 confirmed both custom-time and Current
+Mac Time writes visibly changed the MiniToo clock. The screen has separate
+date and compact hour/minute/second fields for deliberate testing. There is no
+clock read-back or application ACK, so the UI still says the write was
+submitted rather than claiming a state query verified it.
+
+**Automatic Sync is opt-in and hardware-confirmed.**
+When enabled, it sends the same confirmed raw clock write once every ten
+minutes and immediately after macOS posts its system-clock-change notification.
+It does not poll the MiniToo, reconnect Bluetooth, or run on wake/connection;
+the setting persists across launches and is off by default.
 
 ## Planned connectivity-status/menu redesign (capture work may proceed first)
 
@@ -407,8 +412,9 @@ upstreamed).
 - Media send and Photo Album failed before transport because the app used raw
   Python scripts instead of the frozen helper (`ModuleNotFoundError: serial`).
   Packaging layout corrected; re-test still, GIF, MP4/video, and album upload.
-- Time synchronization behavior/protocol remains unresearched; add it to a
-  future protocol investigation rather than guessing a command.
+- Time synchronization is resolved: manual and optional periodic macOS sync
+  use the hardware-confirmed raw `0x18` setter; see its dedicated section
+  above and `PROTOCOL.md`.
 - Full-screen media sends are quarantined: a 160x128 JPEG got no final ACK
   and visibly crashed the MiniToo, while the same image works at 128x128.
   An earlier version of this app's full-screen path was physically working.

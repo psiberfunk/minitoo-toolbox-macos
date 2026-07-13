@@ -822,9 +822,16 @@ decompile-derived findings (2026-07-05). Sources:
   then reverts to the previous view. No pixel upload needed. Confirmed
   reliable on hardware. Good candidate for a quick "flash a status
   message" feature — a natural fit as a composer screen in Control Center.
-- **Remaining tool views** (opcode `0x72`) — Scoreboard and Countdown are
-  capture-derived but not yet implemented. Scoreboard is silent/safe;
-  Countdown can trigger an audible alarm at zero — avoid late-night testing.
+- **Countdown tool view** (tool `3`) — native Control Center implementation
+  pending direct hardware validation. Captured `0x72` body is
+  `[3, active, minutes, seconds]`: `[3,1,1,0]` starts one minute and
+  `[3,0,1,0]` ends/resets it. The MiniToo's physical pause/resume behavior is
+  not protocol-isolated, so the macOS UI intentionally does not guess at a
+  pause command.
+- **Scoreboard tool view** — its user-facing behavior was observed, but the
+  project does not retain a recoverable captured write body. It stays disabled
+  until a fresh HCI capture establishes the packet; do not infer it from an
+  APK or send a guessed tool-1 command.
 
 ### Not incorporated
 
@@ -1401,6 +1408,25 @@ or `Lyric/GetConfig` are; would need a capture specifically designed to
 bisect the startup sequence to pin down further, and doesn't seem worth
 the effort for what it'd unlock. The `(?)` tooltip on the Device Settings
 screen tells the user this straightforwardly instead.
+
+### Clock setting (`0x18`, captured and hardware-confirmed 2026-07-13)
+
+The follow-up controlled Android capture did isolate the visible clock setter.
+`Device/SetUTC` is sent first, but it is JSON bookkeeping rather than the
+device-time write. The official app immediately follows it with raw command
+`0x18` whose body is exactly:
+
+```
+[year % 100, century, month, day, hour, minute, second, weekday]
+```
+
+`weekday` uses Sunday = 0 through Saturday = 6. For example, the Android
+tablet deliberately set to 2026-07-13 08:29:06 (Monday) emitted
+`1a 14 07 0d 08 1d 06 01`; the MiniToo visibly accepted the corresponding
+native macOS write in both custom-time and Current Mac Time tests. This raw
+setter is account-independent: do not reuse the Android capture's JSON token,
+user ID, or device ID. There is no known read-back or application ACK; treat
+the device's visible clock as the only confirmation.
 
 Wire-level, this JSON blob is long enough (~700 bytes) to exceed one RFCOMM
 frame, so the official app splits it across two consecutive RFCOMM

@@ -14,8 +14,10 @@ The core of this repo is a Swift daemon that keeps the Divoom app channel open, 
 - Sends jobs through a localhost daemon at `127.0.0.1:40583`.
 - Provides a copyable macOS `.app` that opens Control Center on launch and keeps menu-bar controls available while it runs.
 - Includes native Control Center actions for the MiniToo stopwatch (start,
-  pause, reset) and its onboard noise meter (start, stop), alongside media,
-  white-noise, album, atmosphere, and device-setting controls.
+  pause, reset), Countdown timer, onboard noise meter (start, stop), Pixel
+  Slot launcher, and one-way clock sync (custom time, current Mac time, or an
+  optional 10-minute background cadence), alongside media, white-noise, album,
+  atmosphere, and device-setting controls.
 
 ## Device assumptions
 
