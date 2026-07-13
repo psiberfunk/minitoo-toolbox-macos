@@ -96,19 +96,34 @@ and intentionally did not publish a new application release. Do not remove
 
 ### Phase 4a — legacy updater bridge sequence (published; awaiting user validation)
 
-A real pre-rename Personal app at `0.1.0-alpha.39` reported the old Personal
-release as newer because that release used `CFBundleVersion` 4. The release
-workflows now assign post-rename builds `1000 + GITHUB_RUN_NUMBER` to make
-numeric ordering unambiguous. The safe sequence is deliberately strict:
-legacy build 39 → Personal bridge build 1008 → Main build 1009.
+The first direct Personal-to-renamed-App attempt was not installable even
+though Sparkle verified its EdDSA signature: Sparkle's plain installer looks
+for an archive directory matching the installed bundle name. A renamed archive
+containing `MiniToo Toolbox.app` therefore cannot directly replace an installed
+`Divoom MiniToo.app`.
 
-Evidence: personal-branch commit `9da52bc` published successful workflow run
-`29257953248`; its Personal appcast advertises legacy-identity Divoom MiniToo
-`0.1.0-alpha.8` at build 1008, with a signed transition feed to Main. Main
-workflow run `29258342656` then published MiniToo Toolbox `0.2.0-alpha.9` at
-build 1009. Both appcasts and immutable archives were inspected after
-publication. Repeat the installed-app update test through both steps before
-claiming the transition works. Do not remove the Personal bridge.
+The published, ordered path is now:
+
+`legacy Personal build 39 → Personal build 1510 → rename-compatibility build
+2012 → normal MiniToo Toolbox build 3011 (and later)`.
+
+Personal build 1510 preserves the legacy bundle identity but routes only to
+the private `main-transition` feed. Build 2012 has the new MiniToo Toolbox
+identity, identifier, and normal Main feed metadata, while its signed archive
+directory is deliberately `Divoom MiniToo.app`; that is the one compatibility
+hop Sparkle can install. Normal Main build 3011 and later use the standard
+`MiniToo Toolbox.app` archive directory. The floors 1500, 2000, and 3000 keep
+Sparkle's numeric ordering unambiguous.
+
+Evidence: Personal commit `b354260` published successful run `29259087591`;
+Main workflow commit `57a5aa7` published normal run `29260726218` and
+compatibility run `29261118286`, both successful. Downloaded feeds and
+immutable archives were checked: Personal advertises 1510 and the transition
+feed; the compatibility feed advertises 2012 and its archive root is
+`Divoom MiniToo.app` with new identity metadata; Main advertises 3011 and its
+archive root is `MiniToo Toolbox.app`. All three extracted apps passed
+`codesign --verify --deep --strict`. This is artifact validation, not an
+installed-app success claim. Do not remove the Personal bridge.
 
 ### Phase 5 — retirement decision (explicit later decision)
 
