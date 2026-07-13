@@ -88,7 +88,9 @@ struct DivoomRawFrameTests {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         let date = try #require(formatter.date(from: "2026-07-13T08:29:06-04:00"))
+        var captureCalendar = Calendar(identifier: .gregorian)
+        captureCalendar.timeZone = try #require(TimeZone(identifier: "America/New_York"))
         // Android HCI capture: raw 0x18 body after Device/SetUTC.
-        #expect(ClockSyncModel.clockSetBody(date: date) == Data([26, 20, 7, 13, 8, 29, 6, 1]))
+        #expect(ClockSyncModel.clockSetBody(date: date, calendar: captureCalendar) == Data([26, 20, 7, 13, 8, 29, 6, 1]))
     }
 }
