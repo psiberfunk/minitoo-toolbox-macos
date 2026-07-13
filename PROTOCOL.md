@@ -803,6 +803,15 @@ decompile-derived findings (2026-07-05). Sources:
 - **Third custom face** — see "Custom face selection" above. **Implemented**
   — `ClockId 988` wired into `tools/divoom_clock.py`'s shortcut dict and
   Control Center's "Custom Faces" screen.
+- **Tool views** — Android HCI captures establish `0x71 [tool]` as a tool
+  read and `0x72` as the tool action command. Two tools are now implemented
+  and directly hardware-tested through the native Control Center:
+  - Stopwatch (tool `0`): `[0,1]` Start, `[0,0]` Pause, `[0,2]` Reset.
+  - Noise Meter (tool `2`): `[2,1]` Start, `[2,2]` Stop. It uses the
+    MiniToo's onboard microphone; no numeric level readback has been
+    established, so the app does not invent one.
+  There is no software "return to clock face" command for either tool;
+  the physical button exits it.
 
 ### Not yet implemented here
 
@@ -813,11 +822,9 @@ decompile-derived findings (2026-07-05). Sources:
   then reverts to the previous view. No pixel upload needed. Confirmed
   reliable on hardware. Good candidate for a quick "flash a status
   message" feature — a natural fit as a composer screen in Control Center.
-- **Tool views** (opcode `0x72`) — stopwatch, scoreboard, noise meter,
-  countdown. Scoreboard and noise meter are silent/safe; **stopwatch and
-  countdown trigger an audible alarm** when they cross a boundary/hit
-  zero — avoid at night. There is no software "return to clock face"
-  command for any tool view; only the physical button exits it.
+- **Remaining tool views** (opcode `0x72`) — Scoreboard and Countdown are
+  capture-derived but not yet implemented. Scoreboard is silent/safe;
+  Countdown can trigger an audible alarm at zero — avoid late-night testing.
 
 ### Not incorporated
 

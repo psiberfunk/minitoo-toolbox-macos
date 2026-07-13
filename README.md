@@ -13,6 +13,9 @@ The core of this repo is a Swift daemon that keeps the Divoom app channel open, 
 - Converts PNG/JPEG/GIF/MP4/video into the Divoom animation payload format.
 - Sends jobs through a localhost daemon at `127.0.0.1:40583`.
 - Provides a copyable macOS `.app` that starts the daemon from the menu bar.
+- Includes native Control Center actions for the MiniToo stopwatch (start,
+  pause, reset) and its onboard noise meter (start, stop), alongside media,
+  white-noise, album, atmosphere, and device-setting controls.
 
 ## Device assumptions
 

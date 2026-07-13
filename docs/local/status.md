@@ -59,23 +59,21 @@ alone. The next work starts with Android Bluetooth HCI-snoop captures of the
 official app, then ports only the observed traffic into the existing Control
 Center shells, followed by direct user hardware confirmation.
 
-1. **Tool-view capture session:** Noise Meter, Scoreboard, Stopwatch, and
-   Countdown. For each, capture opening the feature and one meaningful action
-   (score change/reset; start/stop/reset; duration/start/stop as applicable),
-   while recording the corresponding official-app UI state. Treat these as one
-   batch because existing research suggests a shared `0x72` view-entry family,
-   but do not assume the IDs or follow-up state commands are shared. Exit tool
-   views with the MiniToo's physical button; there is no confirmed software
-   return-to-clock command. Avoid Stopwatch/Countdown boundary alarms at night.
+1. **Implement and hardware-test the remaining captured tool views:**
+   Scoreboard, then Countdown. Stopwatch and Noise Meter are complete. Keep
+   Countdown's physical pause unsupported until a cleaner capture isolates a
+   distinct command/event; its official-app-equivalent Start and Stop/Reset
+   surface is the current target. Exit tool views with the MiniToo's physical
+   button; there is no confirmed software return-to-clock command.
 2. **Alarm capture/test session:** capture list/read, add/edit, enable/disable,
    and delete flows. Only after decoding them, perform a deliberate user-owned
    near-future alarm test and directly confirm it fired as expected.
 3. **Games capture session:** capture launching each available official-app
    game and any exit/return behavior. Do not infer game IDs or send the
    APK-decoded opcodes until this is observed.
-4. **Implement and verify in order:** Noise Meter, Scoreboard,
-   Stopwatch/Countdown, Alarms, Games. Keep each feature disabled until its
-   own capture-derived packet builder and user hardware test are complete.
+4. **Implement and verify in order:** Scoreboard, Countdown, Alarms, Games.
+   Keep each feature disabled until its own capture-derived packet builder and
+   user hardware test are complete.
 
 Sleep-control commands remain a separate research question, not part of this
 batch. The project's existing warning is based on external reverse-engineering
@@ -83,6 +81,27 @@ and generic Divoom mapping, not a bricking event personally observed by this
 project’s user; do not weaken the send guard or transmit any of those opcodes
 without an explicit capture-first test plan and a hardware power-cycle
 recovery path.
+
+## Time synchronization (to-do)
+
+The official Android app's real HCI-snoop traffic (not merely APK tracing)
+shows a normal `SPP_JSON` (`0x01`) command, `Device/SetUTC`, sent as part of
+its post-connection startup burst. Its body contains `Utc` as the host's Unix
+time in seconds and `Time` as the host's local `yyyy-MM-dd HH:mm:ss` clock
+string; `DeviceId`, `Token`, and `UserId` use the normal JSON identity fields.
+The APK code corroborates this construction. The capture is
+`../captures/device-settings.cfa.curf`, record 487 (and another send at record
+8116); see `apk-analysis/jadx-out/sources/com/divoom/Divoom/bluetooth/CmdManager.java`.
+
+Implement a visible **Sync Clock Now** action and last-submitted timestamp in
+the real Device Settings UI, then automatically submit the same command after
+the RFCOMM control connection becomes ready, after Mac wake or a system
+clock/time-zone change, and at a conservative periodic interval while the
+daemon is active. Coalesce duplicate triggers. The MiniToo provides no known
+time readback or ACK for this command, so “last synced” must describe the last
+submission, not proven device state. Before calling it working, deliberately
+test it on hardware and obtain the user's direct visual confirmation that the
+MiniToo clock changes to the Mac's current local time.
 
 ## Planned connectivity-status/menu redesign (capture work may proceed first)
 
