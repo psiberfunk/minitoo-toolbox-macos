@@ -94,17 +94,21 @@ The neutral README acknowledgement follow-up is `4410da4`; it is Markdown-only
 and intentionally did not publish a new application release. Do not remove
 `personal-latest` or its bridge assets.
 
-### Phase 4a — legacy Main build-number bridge (published; awaiting user validation)
+### Phase 4a — legacy updater bridge sequence (published; awaiting user validation)
 
-A real pre-rename Main app at `0.1.0-alpha.39` reported the renamed
-`0.2.0-alpha.5` release as older because the latter used `CFBundleVersion` 5.
-The release workflow now assigns post-rename builds `1000 + GITHUB_RUN_NUMBER`
-to make the numeric ordering unambiguous. Publish and monitor that bridge
-release, inspect the appcast for a build number above 39, then repeat the
-installed-app update test. Commit `f674c09` published successful workflow run
-`29257453882`; its Main appcast advertises `0.2.0-alpha.7` with
-`CFBundleVersion` 1007 and the immutable `main-update-7` archive. This is not
-a Personal-channel change.
+A real pre-rename Personal app at `0.1.0-alpha.39` reported the old Personal
+release as newer because that release used `CFBundleVersion` 4. The release
+workflows now assign post-rename builds `1000 + GITHUB_RUN_NUMBER` to make
+numeric ordering unambiguous. The safe sequence is deliberately strict:
+legacy build 39 → Personal bridge build 1008 → Main build 1009.
+
+Evidence: personal-branch commit `9da52bc` published successful workflow run
+`29257953248`; its Personal appcast advertises legacy-identity Divoom MiniToo
+`0.1.0-alpha.8` at build 1008, with a signed transition feed to Main. Main
+workflow run `29258342656` then published MiniToo Toolbox `0.2.0-alpha.9` at
+build 1009. Both appcasts and immutable archives were inspected after
+publication. Repeat the installed-app update test through both steps before
+claiming the transition works. Do not remove the Personal bridge.
 
 ### Phase 5 — retirement decision (explicit later decision)
 
