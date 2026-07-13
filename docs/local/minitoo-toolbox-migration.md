@@ -94,14 +94,17 @@ The neutral README acknowledgement follow-up is `4410da4`; it is Markdown-only
 and intentionally did not publish a new application release. Do not remove
 `personal-latest` or its bridge assets.
 
-### Phase 4a — legacy Main build-number bridge (in progress)
+### Phase 4a — legacy Main build-number bridge (published; awaiting user validation)
 
 A real pre-rename Main app at `0.1.0-alpha.39` reported the renamed
 `0.2.0-alpha.5` release as older because the latter used `CFBundleVersion` 5.
 The release workflow now assigns post-rename builds `1000 + GITHUB_RUN_NUMBER`
 to make the numeric ordering unambiguous. Publish and monitor that bridge
 release, inspect the appcast for a build number above 39, then repeat the
-installed-app update test. This is not a Personal-channel change.
+installed-app update test. Commit `f674c09` published successful workflow run
+`29257453882`; its Main appcast advertises `0.2.0-alpha.7` with
+`CFBundleVersion` 1007 and the immutable `main-update-7` archive. This is not
+a Personal-channel change.
 
 ### Phase 5 — retirement decision (explicit later decision)
 
