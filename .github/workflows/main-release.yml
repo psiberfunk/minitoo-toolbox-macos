@@ -151,6 +151,7 @@ jobs:
         env:
           CHANNEL: ${{ inputs.release_channel == 'personal-transition' && 'personal' || 'main' }}
           VERSION_PREFIX: ${{ inputs.release_channel == 'personal-transition' && '0.1.0-alpha' || '0.2.0-alpha' }}
+          DIVOOM_SPARKLE_PRIVATE_KEY: ${{ secrets.DIVOOM_SPARKLE_PRIVATE_KEY }}
         run: |
           ditto -x -k arm64/Divoom-MiniToo-arm64.zip .
           mv "Divoom MiniToo.app" arm64.app
@@ -186,8 +187,6 @@ jobs:
               "$UPDATE_DIR"
           dmgbuild -s tools/dmgbuild-settings.py "Divoom MiniToo" Divoom-MiniToo-macos-universal.dmg
           shasum -a 256 Divoom-MiniToo-macos-universal.dmg > Divoom-MiniToo-macos-universal.dmg.sha256
-        env:
-          DIVOOM_SPARKLE_PRIVATE_KEY: ${{ secrets.DIVOOM_SPARKLE_PRIVATE_KEY }}
       - uses: actions/upload-artifact@v4
         with:
           name: Divoom-MiniToo-macos-universal
