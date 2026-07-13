@@ -70,8 +70,8 @@ As of 2026-07-10, opening or updating a PR against
 routine sync/compact-prep work — only when the user explicitly asks for it
 in that session. Previously, compact-prep would proactively cherry-pick and
 push new commits onto an already-open PR branch by default; that is no
-longer standing behavior. Commit and push to `personal`/`fork/personal` as
-normal; leave existing PR branches alone unless asked.
+longer standing behavior. Commit and push to `main`/`fork/main` as normal;
+leave existing PR branches alone unless asked.
 
 ## Before opening a PR
 - One logical feature per branch/PR.
@@ -80,7 +80,7 @@ normal; leave existing PR branches alone unless asked.
 - Check `gh pr list --repo alvinunreal/divoom-minitoo-osx` for current
   status rather than trusting a remembered list.
 
-## After merging back into `personal`
+## After merging back into `main`
 Grep for duplicate `func` declarations before trusting a clean merge:
 `grep -oE '(@objc )?func [a-zA-Z0-9_]+' file.swift | sort | uniq -c | sort -rn`
 

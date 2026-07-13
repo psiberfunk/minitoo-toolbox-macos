@@ -19,7 +19,7 @@ Sparkle receives a single branch-specific HTTPS appcast. The `main`
 appcast describes only the newest Main release, so a user jumps directly
 to the current build; it is not a sequential upgrade path.  Release archives
 will have immutable URLs internally to avoid an overwrite/cache race, even
-though the user-facing channel is simply "latest Personal".
+though the user-facing channel is simply "latest Main".
 
 ## Build identity and branch lock
 
@@ -27,8 +27,8 @@ Every release build will embed these Info.plist values, supplied explicitly by
 CI (with sensible local-development fallbacks):
 
 - `DivoomSourceRepository` — e.g. `psiberfunk/divoom-minitoo-osx`
-- `DivoomSourceBranch` — e.g. `personal`
-- `DivoomUpdateChannel` — e.g. `personal`
+- `DivoomSourceBranch` — e.g. `main`
+- `DivoomUpdateChannel` — e.g. `main`
 - `DivoomUpdateFeedURL` — only that channel's appcast URL
 - `DivoomBuildCommit` and `DivoomBuildRun`
 
@@ -81,15 +81,16 @@ normal signed update path becomes seamless.
 ## Release pipeline
 
 Keep the styled DMG for first installation.  Add a separate app-only universal
-update ZIP and a signed `appcast-personal.xml` feed.  For the lightweight
-initial implementation, the stable branch-specific HTTPS feed is an asset on
-the rolling `personal-latest` GitHub release.  It contains only the newest
-Personal item and points to that item's immutable update-release asset.
+update ZIP and a signed `appcast-main.xml` feed. The stable branch-specific
+HTTPS feed is an asset on the rolling `main-latest` GitHub release. It contains
+only the newest Main item and points to that item's immutable update-release
+asset. The retained `personal-latest` feed is a one-time bridge: it points at
+`personal-update-4`, which then accepts the signed Main feed.
 
 The Sparkle Ed25519 private key is stored only as a GitHub Actions secret; the
 public key is embedded in the app.  CI creates a per-build immutable update
-asset, signs it, updates the one-item Personal feed, and retains the existing
-`personal-latest` prerelease DMG for people who download manually.
+asset, signs it, updates the one-item Main feed, and retains the rolling
+`main-latest` prerelease DMG for people who download manually.
 
 ### Retention
 
@@ -125,7 +126,7 @@ shell packager remains the project-specific distribution layer.
    packaging first.
 3. Add consent, automatic/manual checking, safe defer/restart behavior, and
    the explicit ad-hoc quarantine option.
-4. Extend CI to publish signed update ZIPs and a Personal-only appcast.
+4. Extend CI to publish signed update ZIPs and a Main-only appcast.
 5. Test: disabled/enabled consent; offline/manual checks; wrong-channel and
    tampered feed rejection; `/Applications` and `~/Applications`; DMG
    relocation guidance; no update during a media send; relaunch/device-cache

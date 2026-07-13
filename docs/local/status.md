@@ -1,9 +1,8 @@
 # Status (fork-local)
 
-Current state of each feature on `personal` — includes work still sitting
-in unmerged upstream PRs, so this does NOT represent alvinunreal/main's
-actual state. Edit in place when status changes; this is a table, not a
-log.
+Current state of each feature on this fork's independently maintained `main`.
+It does not represent `alvinunreal/divoom-minitoo-osx:main`. Edit in place
+when status changes; this is a table, not a log.
 
 | Feature | Status |
 |---|---|
