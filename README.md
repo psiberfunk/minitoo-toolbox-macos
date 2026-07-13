@@ -26,9 +26,8 @@ Download the latest universal DMG from this repository's **main-latest**
 prerelease, then follow [INSTALLING.md](INSTALLING.md). The app currently uses
 ad-hoc signing, so macOS may require one explicit first-launch approval.
 
-Existing Divoom MiniToo macOS / Personal-channel users update through a signed
-compatibility bridge into the Main channel. Do not delete an installed old app
-before accepting its offered update.
+Pre-rename/Personal-channel builds are retired and no longer receive in-app
+updates. Their remaining users should install the current Main DMG manually.
 
 ## What you can do
 

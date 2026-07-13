@@ -19,6 +19,7 @@ when status changes; this is a table, not a log.
 | Games (`0xa0`/`0x17`/`0x21`/`0x88`) | Same as Alarms. |
 | Device Settings (`Sys/SetConf`) | **Hardware-tested (2026-07-07)** end-to-end from this app's own UI: temperature unit, date format, clock format (including the `Time24Flag` 0/1↔12h/24h mapping itself), Bluetooth auto-reconnect, remember-power-on-volume, auto power off all confirmed working against a real MiniToo. Notification sound (level slider) confirmed reachable, not independently confirmed audible. No device-side state readback exists for this command (confirmed by direct testing, not just capture absence) — screen caches last-sent values in `UserDefaults` instead, with a `(?)` tooltip explaining that's not a live read. "Shake Shake" and "Tap and Play" confirmed **not** BT-transmitted — Android-local only, not implemented. Known MiniToo firmware quirk: its own on-screen settings menu can show stale text after a change until backed out and re-entered (documented in README.md). See PROTOCOL.md's "Device Settings" section. |
 | App icon | Done (2026-07-07). `assets/AppIcon.icns` wired into the bundle via `CFBundleIconFile`, confirmed rendering correctly in Finder (icon-view + Get Info). First pass (thin coloring-book line art) was unreadable at 16-32pt; measured actual rendered sizes side-by-side and found two fixes needed: bold, high-contrast linework (3x stroke width, simplified fine detail) and a tight crop (content filling ~90% of the 1024 canvas, not ~74%) — a solid dark glyph on the screen is what actually survives downscaling, thin outline detail doesn't. Current source (`assets/AppIcon-source.png`) is the user's Gemini-refined "Candidate5" render, trimmed to content bbox at its native ~657×750 resolution (an earlier pass mistakenly used a crop pulled from a Downloads contact-sheet image instead of the actual selected candidate — caught and fixed same session). Regen steps in README.md. |
+| Distribution/update channel | **Main-only (2026-07-13).** The old Personal branch, tags, releases, and compatibility updater path were retired. Legacy installs require a one-time manual install of the current Main DMG; new/updated Main builds use the signed `main-latest` feed. Hosted release run `29262212226` published Main build 3015 successfully. |
 
 ## Next feature batch (approved 2026-07-10)
 
@@ -319,13 +320,9 @@ computer contending for audio/control.
 
 ## Long-term release hardening
 
-- **Deferred independent-fork identity transition.** Before broader public
-  distribution, decide whether to rename the app/project and make the active
-  integrated branch this fork's `main` (replacing `personal`). This requires
-  legal distribution-rights review, preserved upstream attribution, a
-  bundle-ID/UserDefaults migration, workflow retargeting, and no claim of
-  upstream takeover. See `docs/local/branch-workflow.md`; no rename or branch
-  promotion is approved yet.
+- **Independent-fork identity transition — complete.** MiniToo Toolbox is the
+  active Main-only product line. The former Personal release path was retired
+  on 2026-07-13 rather than maintaining a bridge for its remaining users.
 
 - **Remove the Python runtime dependency from the shipped app — done
   2026-07-11.** Migrated the media/custom-face/photo-album pipeline to
@@ -362,7 +359,7 @@ computer contending for audio/control.
   from the verified staged update; it never does so silently. Local universal
   packaging and appcast-generation checks pass. Hosted CI publication passed
   end-to-end in run `29154079898`: both architecture slices, universal DMG,
-  signed one-item Personal appcast, immutable update ZIP, and release publish
+  signed one-item appcast, immutable update ZIP, and release publish
   all succeeded. The user then confirmed first-launch consent, branch/build
   provenance UI, and a real in-app update: Gatekeeper clearance is required
   only for the initial DMG install, not subsequent verified updates. The CI
@@ -373,8 +370,8 @@ computer contending for audio/control.
 
 - **Supply-chain security hardening — planned and deferred (2026-07-11).** An
   authenticated review found no current compromise, but confirmed that neither
-  `personal` nor `main` is protected, the Sparkle signing key is a
-  repository-level Actions secret, and every `personal` push can currently
+  `main` is not protected, the Sparkle signing key is a repository-level
+  Actions secret, and every Main push can currently
   reach a workflow with release authority. The first future hardening unit is
   to separate unprivileged automatic CI from approval-gated release signing,
   then pin Actions and verify external FFmpeg source. Full findings,

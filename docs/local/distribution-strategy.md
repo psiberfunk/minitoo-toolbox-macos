@@ -4,15 +4,11 @@
 
 Publish a self-contained universal macOS app from every push to `main`.
 
-## Future product identity (deferred)
+## Product identity
 
-Before broad distribution, evaluate whether this fork should receive a new app
-name and promote its active `personal` line to the fork's `main` branch. That
-is a governance/identity transition, not a build-system rename: it requires
-legal distribution-rights review, upstream attribution, a bundle-ID and
-UserDefaults migration plan, release/workflow retargeting, and an explicit
-decision not to imply upstream endorsement or takeover. The detailed checklist
-lives in `docs/local/branch-workflow.md`.
+MiniToo Toolbox for macOS is the independently maintained Main-only product
+line. The prior Personal release path was retired on 2026-07-13; its remaining
+users must install the current Main DMG manually.
 
 ## Stepwise rollout
 
@@ -85,8 +81,8 @@ them.
 The app is moving to Sparkle 2 through the checked-in Swift Package, while
 `tools/build-divoom-app.sh` continues to own app packaging. CI embeds the
 source repository, branch, channel, feed URL, commit, and build number in the
-app. The updater uses only that signed, branch-specific feed, so a Personal
-build cannot silently switch to upstream or a future `main` channel.
+app. The updater uses only the signed Main feed; retired pre-rename builds are
+not part of the in-app update population.
 
 Each release publishes a user-facing DMG plus a separate immutable, app-only
 update ZIP. `main-latest` carries a one-item, signed `appcast-main.xml` that

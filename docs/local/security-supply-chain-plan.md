@@ -5,9 +5,7 @@
 **Reviewed 2026-07-11; implementation deliberately deferred.** This document
 preserves the findings and the agreed hardening sequence so that release work
 can resume without redoing the discovery. It describes the active fork's
-`personal` release channel; when the planned branch transition happens, apply
-the same controls to the new working `main` branch before it becomes the
-release source.
+Main-only release channel.
 
 No evidence of a current compromise was found. This is a risk-reduction plan,
 not an incident report.
@@ -17,7 +15,7 @@ not an incident report.
 - The shipped app uses a pinned SwiftPM revision of Sparkle (`2.9.4`, exact
   revision recorded in `Package.resolved`). That prevents a later moved version
   tag from silently changing the resolved source.
-- The updater is intentionally branch-bound: a Personal build carries its own
+- The updater is intentionally branch-bound: a Main build carries its own
   repository, channel, HTTPS feed URL, and Sparkle public key. It accepts only
   that channel and verifies Sparkle's signed feed/update archive before
   installation. A GitHub release-asset edit alone cannot update installed apps
@@ -37,11 +35,11 @@ these remain true after this date; re-check before implementing the plan.
 
 | Control | Finding | Consequence |
 |---|---|---|
-| Repository | Public fork; default branch is `main`; active release branch is `personal`. | Both branches matter: protect `personal` now and `main` before the future transition. |
-| Branch protection | Neither `main` nor `personal` is protected; no repository rulesets exist. | A writer can directly alter release inputs. |
+| Repository | Public fork; default and active release branch is `main`. | Protect Main release inputs. |
+| Branch protection | `main` is not protected; no repository rulesets exist. | A writer can directly alter release inputs. |
 | Collaborators | Only `psiberfunk` is a direct collaborator and admin. | Low collaborator exposure, but this one GitHub account is the effective root of trust. |
 | Actions policy | All actions/workflows are allowed; full-SHA pinning is not required. | Current `@v4`/`@v5`/`@v6` action tags are mutable supply-chain inputs. |
-| Workflow tokens | Repository default is `contents: read`, but `personal-release.yml` declares top-level `contents: write`. | Test and build jobs receive more authority than they need. |
+| Workflow tokens | Repository default is `contents: read`, but `main-release.yml` declares top-level `contents: write`. | Test and build jobs receive more authority than they need. |
 | Sparkle signing key | `DIVOOM_SPARKLE_PRIVATE_KEY` exists as a repository secret; no Environment exists. | A push that changes the workflow can arrange for CI to disclose or misuse the signing key. |
 | Dependency alerts | Dependabot alerts/security updates are disabled. | No current automated vulnerability visibility; this does **not** mean there are no vulnerable dependencies. |
 | Code scanning | No analysis exists. | Swift, C/C++, Python, and workflow code receive no automated security analysis. |
@@ -97,7 +95,7 @@ into a separate release-promotion job or workflow:
   environment. Restrict it to the active release branch/tag and require an
   explicit approval before the job starts.
 - Promote one reviewed immutable commit (or a reviewed, signed tag), rather
-  than treating every `personal` push as an immediately trusted updater
+  than treating every Main push as an immediately trusted updater
   release.
 - Preserve the current updater's branch lock, Sparkle signature requirement,
   user-visible install choice, and no-silent-quarantine-removal behavior.
@@ -112,7 +110,7 @@ verified CI artifact.
 
 ### Phase 2 — repository and Actions controls
 
-- Protect `personal` immediately; protect `main` before making it active.
+- Protect `main` immediately.
 - Require pull requests, passing CI, no force pushes, no branch deletion, and
   review for release-sensitive paths (`.github/**`, build scripts, dependency
   manifests/locks, updater code, and release docs). Add `CODEOWNERS` if there
