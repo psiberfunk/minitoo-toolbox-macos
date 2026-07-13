@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import argparse
 import struct
 from pathlib import Path
 
@@ -11,6 +12,92 @@ import zstandard as zstd
 ROOT = Path(__file__).resolve().parents[1]
 TSV = ROOT / "captures" / "resend-btspp.tsv"
 OUT = ROOT / "captures" / "reconstructed"
+
+
+def parse_btsnoop(path: Path):
+    """Extract RFCOMM UIH payloads from Android HCI-snoop (`btsnoop`) files.
+
+    Android's `.cfa.curf` files are normal btsnoop/H4 streams despite their
+    OEM extension. This deliberately handles the small, control-message RFCOMM
+    path used by the MiniToo; large media transfer analysis remains separate.
+    """
+    raw = path.read_bytes()
+    if raw[:8] != b"btsnoop\x00":
+        raise ValueError(f"not a btsnoop file: {path}")
+    pos = 16
+    acl_parts = {}
+    rfcomm_streams = {}
+    rows = []
+    frame = 0
+    while pos + 24 <= len(raw):
+        orig_len, incl_len, flags, _drops = struct.unpack_from(">IIII", raw, pos)
+        _timestamp = struct.unpack_from(">Q", raw, pos + 16)[0]
+        pos += 24
+        packet = raw[pos : pos + incl_len]
+        pos += incl_len
+        frame += 1
+        if len(packet) < 5 or packet[0] != 0x02:  # HCI ACL
+            continue
+        handle_flags, acl_len = struct.unpack_from("<HH", packet, 1)
+        acl = packet[5 : 5 + acl_len]
+        handle = handle_flags & 0x0FFF
+        pb = (handle_flags >> 12) & 0x3
+        direction = flags & 1
+        key = (direction, handle)
+        if pb in (0, 2):  # complete or first non-flushable fragment
+            acl_parts[key] = bytearray(acl)
+        elif key in acl_parts:
+            acl_parts[key].extend(acl)
+        else:
+            continue
+        assembled = bytes(acl_parts[key])
+        if len(assembled) < 4:
+            continue
+        l2_len, cid = struct.unpack_from("<HH", assembled)
+        if len(assembled) < 4 + l2_len:
+            continue
+        del acl_parts[key]
+        if cid != 0x0041 or l2_len < 4:  # MiniToo RFCOMM CID in these captures
+            continue
+        rf = assembled[4 : 4 + l2_len]
+        address, control, length0 = rf[:3]
+        dlci = address >> 2
+        if not (control & 0xEF) == 0xEF:  # UIH only
+            continue
+        offset = 3
+        if length0 & 1:
+            payload_len = length0 >> 1
+        else:
+            if len(rf) < 4:
+                continue
+            payload_len = ((rf[3] << 7) | (length0 >> 1))
+            offset += 1
+        if control & 0x10:  # credit-based flow control adds one byte
+            offset += 1
+        if len(rf) < offset + payload_len:
+            continue
+        payload = rf[offset : offset + payload_len]
+        stream_key = (direction, dlci)
+        stream = rfcomm_streams.setdefault(stream_key, bytearray())
+        stream.extend(payload)
+        # Divoom SPP packets are self-delimiting; recover all complete frames.
+        while len(stream) >= 4:
+            start = stream.find(b"\x01")
+            if start < 0:
+                stream.clear()
+                break
+            if start:
+                del stream[:start]
+            declared = int.from_bytes(stream[1:3], "little")
+            total = declared + 4
+            if len(stream) < total:
+                break
+            message = bytes(stream[:total])
+            del stream[:total]
+            if message[-1] != 0x02:
+                continue
+            rows.append({"frame": frame, "dir": direction, "dlci": dlci, "data": message})
+    return rows
 
 
 def parse_rows():
@@ -49,15 +136,19 @@ def describe_packet(data: bytes) -> str:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--btsnoop", type=Path, help="raw Android .cfa.curf/btsnoop input")
+    args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    rows = parse_rows()
+    rows = parse_btsnoop(args.btsnoop) if args.btsnoop else parse_rows()
 
     summary = []
     for r in rows:
         d = r["data"]
         summary.append(
-            f"frame={r['frame']:>4} t={r['time']:>9.6f} dir={r['dir']} "
-            f"{r['src']}->{r['dst']} {describe_packet(d)} data={d[:24].hex()}"
+            f"frame={r['frame']:>4} t={r.get('time', 0):>9.6f} dir={r['dir']} "
+            f"dlci={r.get('dlci', '-')} {r.get('src', '?')}->{r.get('dst', '?')} "
+            f"{describe_packet(d)} data={d[:24].hex()}"
         )
     (OUT / "spp-summary.txt").write_text("\n".join(summary) + "\n")
 

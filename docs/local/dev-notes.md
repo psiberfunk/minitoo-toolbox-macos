@@ -831,3 +831,141 @@ section for the general pattern this now lives under -- it covers both
 this (detecting and untangling an already-committed-and-pushed
 entanglement) and the earlier, distinct lesson (stashing another
 session's uncommitted WIP before it interferes).
+
+## Official Android app firmware-offer investigation (2026-07-12)
+
+**Question:** why is a MiniToo on 343006 not being offered 343008 by the
+official Android app? The locally connected reference MiniToo reported 343008;
+the goal was to understand the friend's 343006 offer path, **not** to invoke an
+update or transfer firmware.
+
+### Live evidence (server-side, not Bluetooth)
+
+Used the user-authorized Android Debug Bridge connection to the Lenovo Tab M9
+and a short-lived, local HTTPS diagnostic proxy. The app's permissive custom
+trust manager accepted the proxy certificate; no CA was installed on Android.
+The proxy was enabled for 15 seconds only, then cleared and the app relaunched
+normally. No firmware dialog was accepted and no device firmware-transfer
+opcode was sent. Captured flows and any account-bearing payloads remain
+outside the repository and must not be committed.
+
+The official app (3.8.22) made both of these successful requests for the
+connected MiniToo's hardware family:
+
+- `Device/GetUpdateFileList`: request `HardwareList=[343]`, `IsTest=0`;
+  response `ReturnCode=0`, `VersionList=[343000]`.
+- `GetUpdateFileV3`: request `Hardware=343`, `IsTest=false`,
+  `UpdateFlag=2`; response `ReturnCode=0` **but no firmware `FileId` or
+  candidate `Version`**.
+
+The official APK's `UpdateFileService` code corroborates the interpretation:
+the `GetUpdateFileV3` request sends the hardware family (the device version
+divided by 1000), not the current full version. If a response contains a file,
+the app then compares the returned candidate version with the full version it
+has already read from the speaker over Bluetooth. An absent `FileId` is filtered
+out before that comparison, so there is no update to offer regardless of
+whether the actual speaker is 343006 or 343008.
+
+### Current conclusion and safe next step
+
+As observed on 2026-07-12, Divoom's live international endpoint was not
+publishing a downloadable firmware candidate for hardware family 343 in this
+app/account context. This directly explains why changing only the local device
+version cannot make the official app offer 343008: that version is not part of
+the server response at all. The `VersionList` value alone is not a downloadable
+firmware offer.
+
+The request also carries account/device context, so this observation does not
+prove that every account or region receives the exact same response. The next
+definitive comparison, if needed, is a similarly short, redacted capture from
+the friend's real 343006 setup. Do **not** fabricate a successful response or
+attempt a firmware transfer merely to test UI behaviour: that would require a
+valid firmware file and can create an unsafe device-update path. A genuine
+server candidate (or a separately acquired, verified firmware package and
+device-specific update protocol capture) is required before any update work
+can be considered.
+
+## Android HCI capture batch: time and timer tools (2026-07-12)
+
+Fresh official-app HCI snoops were collected with the Mac daemon stopped so the
+Android tablet owned the MiniToo RFCOMM connection. HCI snooping was disabled
+again after each batch. Local-only captures are `../captures/time-sync-2026-07-12.cfa.curf`,
+`../captures/tool-views-2026-07-12.cfa.curf`, and
+`../captures/countdown-pause-2026-07-12.cfa.curf`; bugreport ZIPs remain
+temporary and are not repo artifacts.
+
+- **Time sync:** the official app again emitted normal SPP JSON
+  `Device/SetUTC` immediately after connecting, with Unix seconds plus the
+  host-local `yyyy-MM-dd HH:mm:ss` time. This corroborates the existing
+  implementation plan. The physical clock was already correct, so this is
+  capture-confirmed submission, not a new visual proof of clock correction.
+- **Stopwatch:** captured entry, Start, Stop, and Reset in the official app.
+- **Scoreboard:** captured entry, a score increment, reset confirmation, and
+  confirmed return to `000`–`000`.
+- **Countdown:** the duration picker must be given a nonzero time; confirming
+  a one-minute duration immediately starts it (the app changes Start to Stop).
+  The app-side Stop ends/resets the timer; it offers no pause control. The user
+  directly confirmed the MiniToo's physical pause/resume control exists.
+
+The physical countdown pause/resume was separately captured while the official
+app was connected. No obvious plaintext pause event appeared, but that is not
+enough to call it device-local: these snoops contain fragmented RFCOMM frames
+and need stream reassembly before drawing a protocol conclusion. Do not invent
+or transmit a pause command. For the eventual macOS Countdown UX, match the
+official app's captured, safe surface first (set duration, start, end/reset)
+and keep physical pause unsupported unless a capture-derived packet is found.
+
+### Timer packet decode follow-up
+
+`tools/parse_divoom_spp.py` was extended to read raw Android
+`.cfa.curf`/btsnoop input (HCI ACL + L2CAP + RFCOMM UIH reassembly) while
+retaining its prior TSV mode. Running it against the pause capture recovered
+the tool protocol directly:
+
+- tool reads: SPP command `0x71` (`SPP_GET_TOOL_INFO`), body `[tool]`;
+  Countdown is tool `3`.
+- tool writes: SPP command `0x72` (`SPP_SET_TOOL_INFO`); Countdown body is
+  `[3, active, minutes, seconds]`. A one-minute start was
+  `[3, 1, 1, 0]`; ending it was `[3, 0, 1, 0]`.
+- The MiniToo replied to the read with a state payload containing tool `3`,
+  active `1`, minutes `1`, seconds `0`, and acknowledged writes.
+
+This is sufficient to implement and test the official-app-equivalent
+Countdown surface. The physical pause/resume test produced alternating
+Countdown write/ack traffic, but the capture does not isolate a distinct
+device-originated pause packet from the surrounding app synchronization.
+Pause remains intentionally unsupported until a cleaner, timestamped capture
+establishes a standalone device event or command.
+
+## Noise Meter capture (2026-07-12)
+
+Official-app Start → short run → Stop was captured and decoded with the raw
+btsnoop-capable `parse_divoom_spp.py` path. Noise Meter is tool `2`:
+`0x71 [2]` reads it; `0x72 [2,1]` starts it; `0x72 [2,2]` stops it. The raw
+capture is local-only at `../captures/noise-meter-2026-07-12.cfa.curf`.
+
+## Pixel Slot game launch capture (2026-07-12)
+
+The official Game screen exposed Pixel Slot and instructed the user to start it
+with the MiniToo's physical knob. The physical launch/exit interaction was
+captured and decoded. The app-to-device launch packet is SPP command `0xA0`
+with body `01 01` (`01 05 00 A0 01 01 A7 00 02` including the SPP wrapper).
+This validates **Pixel Slot launch only**; it does not establish a generic game
+ID scheme, game controls, or an app-driven exit command. The local-only raw
+capture is `../captures/game-pixel-slot-2026-07-12.cfa.curf`.
+
+## Alarm capture and physical firing test (2026-07-12)
+
+The official Alarm UI exposes fixed device-resident slots (not arbitrary
+add/delete records), each with time, repeat, enabled state, and notification
+sound. Captured SPP list reads use command `0x42` with body `0x45`. The full
+slot-write packet has not yet been isolated from this combined trace; do not
+derive it from APK code alone.
+
+A deliberately scheduled 7:50 PM slot was directly hardware-confirmed: the
+MiniToo fired while in Atmosphere mode, played the selected bells sound, showed
+the scheduled time plus an animated alarm-clock display, and required a
+physical joystick press to dismiss. This proves alarm scheduling/execution is
+device-local once configured, not a phone-side timer. The test slot was then
+confirmed disabled. The local-only capture is
+`../captures/alarm-fire-2026-07-12.cfa.curf`.
