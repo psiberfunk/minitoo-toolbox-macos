@@ -1,19 +1,41 @@
 # Divoom MiniToo alpha
 
-This is an early personal alpha build for macOS 12 and later.
+This is an early personal alpha build for macOS 12 and later. It is now a
+substantial downstream expansion of the original upstream menu-bar app.
 
-- Native Bluetooth scan/pairing; no Homebrew `blueutil` dependency.
-- Normal 128×128 and full-screen 160×128 Send Media (still images, GIFs, and
-  video) and Photo Album uploads have been hardware-tested on a MiniToo.
-- FFmpeg is bundled for video conversion; the exact corresponding source
-  archive is attached to this release under LGPL v2.1 or later.
-- Video preview displays the first encoded frame; the device receives the
-  animation frames.
-- White Noise transport works; its display-mode behavior is accepted as-is.
-- This build can check the signed Personal update feed after first-launch
-  consent. It stays on the embedded Personal repository/branch/channel and
-  downloads only the newest compatible release. Preferences shows its exact
-  source and build information.
+## Highlights
+
+- **Control Center:** a native, icon-grid Control Center brings the MiniToo's
+  controls together in one place, alongside the compact menu-bar controls.
+- **Media and on-device photos:** send normal 128×128 or full-screen 160×128
+  still images, GIFs, and video. Add still photos to the MiniToo's persistent
+  Photo Album, which survives device restarts. Video previews show the first
+  encoded frame while the device receives the animation.
+- **Display and ambience controls:** brightness, display on/off, Custom Faces
+  1–3, White Noise (per-channel levels and device-state readback), and
+  Atmosphere backgrounds/text effects are available from the UI.
+- **Device settings:** configure notification level, temperature and date
+  format, 12/24-hour clock, Bluetooth auto-reconnect, remembered power-on
+  volume, and auto power-off. The MiniToo does not expose readback for these
+  settings, so the app labels the saved values as last sent rather than live
+  device state.
+- **MiniToo tools:** Noise Meter and Stopwatch have been hardware-tested.
+  Countdown, manual Time Sync, and the Pixel Slot launcher are capture-derived
+  alpha controls that still need direct device confirmation; Scoreboard and
+  Alarms remain visibly unavailable rather than sending unverified commands.
+- **More resilient setup and status:** scan for and select a MiniToo from the
+  app—its Bluetooth address is never hardcoded—then see distinct Bluetooth,
+  local-audio, and control-service health states. The app also recovers its
+  control service more carefully after launch or a dropped connection.
+- **Polished Mac experience:** an app icon, Preferences (including optional
+  Dock icon and battery display), and a purpose-built DMG installer.
+- **Signed Personal-channel updates:** after first-launch consent, the app can
+  check its embedded, branch-locked signed update feed and download only the
+  newest compatible Personal release. Preferences shows the exact source and
+  build information.
+
+FFmpeg remains bundled for GIF/video decoding; the corresponding source archive
+is attached to this release under LGPL v2.1 or later.
 
 The app is ad-hoc signed and not notarized. After dragging it from the DMG to
 Applications, use the short Terminal command in the included `INSTALLING.md` to

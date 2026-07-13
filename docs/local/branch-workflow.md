@@ -30,6 +30,24 @@ future session notices CI "didn't run" after a docs-only push, this is
 expected behavior, not a broken workflow — check `paths-ignore` before
 assuming something's wrong.
 
+## Keep release notes current
+
+`RELEASE_NOTES.md` is the user-facing text for both the `personal-latest`
+GitHub release and its Sparkle update metadata; it is not a historical changelog
+or an internal engineering log. Update it in the same change set as every
+user-visible feature, behavior change, limitation, installation/update change,
+or material reliability improvement destined for `personal`. Describe what a
+user can do or needs to know, distinguish hardware-confirmed functionality from
+capture-derived/experimental controls, and do not advertise disabled prototypes
+as available features. Keep implementation-only changes (refactors, tests,
+vendor updates) out unless they materially change the user's experience.
+
+Because Markdown-only pushes intentionally skip the release workflow, a
+release-notes-only correction does not publish by itself. Include the note with
+the related releasable code whenever possible; if a standalone correction must
+reach an existing release/update feed, explicitly request or run the workflow's
+`workflow_dispatch` path and monitor that run to completion.
+
 ## Git transport vs. GitHub API authentication
 
 The local `fork` remote is the authority for normal source pushes. Its Git
