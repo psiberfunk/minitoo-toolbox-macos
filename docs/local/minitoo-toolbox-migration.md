@@ -3,8 +3,8 @@
 ## Objective
 
 Move the independently maintained project from its former Divoom MiniToo
-identity to **MiniToo Toolbox for macOS**, while preserving installed users'
-device selection, preferences, and signed update path.
+identity to **MiniToo Toolbox for macOS**, preserving device selection and
+preferences for users who install the renamed app.
 
 This is a checkpointed migration. Each phase must be committed, pushed, and
 independently buildable before work starts on the next phase. Do not squash,
@@ -12,22 +12,18 @@ rebase, force-push, or mix unrelated feature work into these commits.
 
 ## Non-negotiable compatibility invariants
 
-1. Existing Personal installations retain their already-published signed bridge
-   until an old Personal app has updated into Main.
-2. Existing Main installations continue to reach their signed `main` feed when
-   the GitHub repository moves; GitHub's old URL redirect is relied on but must
-   be tested from an installed app before old release assets are retired.
-   Their replacement must use a `CFBundleVersion` above the legacy public
-   high-water mark; Sparkle compares that build number rather than the
-   marketing version string.
-3. The renamed app imports the old `local.divoom.minitoo` defaults domain once,
+1. The renamed release uses a `CFBundleVersion` above the legacy public
+   high-water mark, because Sparkle compares that build number rather than the
+   marketing version string. This preserves monotonic release versioning; it
+   does not promise an in-app migration from a pre-rename installation.
+2. The renamed app imports the old `local.divoom.minitoo` defaults domain once,
    without overwriting values a user has already set in the new app.
-4. The old `~/Library/Application Support/DivoomMiniToo` directory moves only
+3. The old `~/Library/Application Support/DivoomMiniToo` directory moves only
    when `~/Library/Application Support/MiniTooToolbox` does not already exist.
-5. Device/protocol terms such as `Divoom*`, Bluetooth device names, and wire
+4. Device/protocol terms such as `Divoom*`, Bluetooth device names, and wire
    formats are not cosmetic rename targets. They remain where technically
    accurate.
-6. No hardware-affecting behavior may be claimed verified without direct user
+5. No hardware-affecting behavior may be claimed verified without direct user
    confirmation on a physical MiniToo.
 
 ## Phase map and handoff state
@@ -52,16 +48,14 @@ Required handoff note: record commit ID, test result, and every intentionally
 unchanged old-name reference. Do not use a broad search/replace after this
 phase.
 
-### Phase 2 — installed-app migration validation (pending user observation)
+### Phase 2 — installed-app migration validation (retired; not performed)
 
-Scope: use a real installed pre-rename Main app to install the renamed build.
-Confirm preferences/device address, update consent, UI preferences, and logs
-survive; then confirm Main feed lookup works with the changed app identity.
-
-This requires user observation. Until it is complete, do not claim
-cross-identity updating works. The legacy Personal bridge remains intact; old
-Main feed URLs are retained through GitHub's repository redirect, while the
-rolling release may remove superseded old-name download assets.
+The planned observation of a real pre-rename Main app installing/updating into
+the renamed app was not performed. The project deliberately retired the
+entire compatibility-updater path: every pre-rename installation must manually
+install a current MiniToo Toolbox Main DMG. The renamed app still performs its
+one-time import of old preferences and Application Support data after that
+manual installation.
 
 ### Phase 3 — GitHub repository rename (complete)
 
@@ -94,7 +88,7 @@ The neutral README acknowledgement follow-up is `4410da4`; it is Markdown-only
 and intentionally did not publish a new application release. The former
 Personal artifacts were later retired in Phase 4a.
 
-### Phase 4a — legacy updater retirement (complete)
+### Phase 4a — legacy Personal updater retirement (complete)
 
 An attempted Personal-to-renamed-App bridge exposed a Sparkle limitation: a
 renamed archive cannot replace a differently named installed bundle using the
@@ -102,7 +96,7 @@ plain installer. Rather than preserve a multi-stage updater path for two
 remaining users, the project retired that path on 2026-07-13.
 
 The retired branch, migration-only feeds and releases, bridge-only workflow
-inputs, and bridge-only app metadata were removed. Legacy users must
+inputs, and bridge-only app metadata were removed. Every pre-rename user must
 make a one-time manual installation of a current MiniToo Toolbox Main DMG.
 Normal releases remain Main-only, with the standard `MiniToo Toolbox.app`
 archive directory and 3000+ build-number floor.

@@ -10,8 +10,8 @@ Not for upstream — personal working notes for developing this fork.
   preference.
 - `tools/DivoomControlCenter.swift`, `DivoomPreferences.swift`,
   `DivoomDeviceSetup.swift`, `DivoomAtmosphereIcons.swift` — SwiftUI
-  windows, one `ObservableObject` model per screen. Several of these only
-  exist on `personal`/open PR branches, not yet merged upstream.
+  windows, one `ObservableObject` model per screen. These are maintained on
+  this fork's `main`; upstream parity is not implied.
 - `tools/divoom_*.py` — Python CLI tools for features developed/tested
   that way.
 - `tools/DivoomRFCOMM.swift` / `DivoomRFCOMMSend.swift` — standalone
@@ -21,9 +21,9 @@ Not for upstream — personal working notes for developing this fork.
 
 `blueutil` is not the MiniToo transport. The shipped Swift daemon already
 uses the same macOS `IOBluetooth` framework directly to open RFCOMM channel
-1. Today, the menu-bar app shells out to `blueutil` for device inquiry,
-paired-device enumeration, pairing/name lookup, connection-state checks, and
-the disconnect/reconnect convenience actions.
+1. At the time of this research, the menu-bar app still shelled out to
+`blueutil` for device inquiry, paired-device enumeration, pairing/name lookup,
+connection-state checks, and disconnect/reconnect convenience actions.
 
 Review of blueutil's source established that it is an Objective-C CLI wrapper
 over `IOBluetooth`, not a privileged/Homebrew-only Bluetooth mechanism. Its
@@ -59,6 +59,80 @@ has the same wrong HTTP-only assumption already found and fixed
 independently here. Its `bt_spp_rfcomm.py` transport is worth reading for
 patterns if the daemon's RFCOMM robustness ever becomes a real pain point,
 not worth adopting as a dependency.
+
+## Connectivity/status implementation record (2026-07-12)
+
+Preserved from the former status tracker because these are implementation
+constraints and debugging evidence, not current backlog items.
+
+The menu must keep three independent signals separate:
+
+| Signal | Establishes | Must not establish |
+|---|---|---|
+| Saved pairing record | Setup identity | Range, a live link, or control health |
+| `IOBluetoothDevice.isConnected()` | Generic MiniToo Bluetooth link | A2DP availability, RFCOMM health, or another host's ownership |
+| CoreAudio route match | Local route unavailable/available/selected/unknown | Control health or another host's connection |
+| Daemon process state | Process lifecycle | A working device channel |
+| Parseable `WhiteNoise/Get` reply | End-to-end local control health | Audio state or why a failed probe occurred |
+
+`WhiteNoise/Get` is a capture-derived, hardware-confirmed read, so it is the
+safe probe. A failed probe is reported neutrally as control unavailable; the
+app cannot infer that audio is connected or identify another host using a
+Bluetooth profile.
+
+The current menu uses monochrome `×` for Bluetooth unavailable, `○` when
+Bluetooth is on but MiniToo is not linked, `◐` for an incomplete link, and
+`◆` only when all measured components are ready. In Ready it shows the three
+independent rows—Bluetooth, Audio on this Mac, and Device control—plus battery;
+it intentionally avoids redundant “Ready”/“Daemon running” rows. Routine
+results stay out of the main menu; non-routine diagnostics appear as
+`Latest status:` in Debugging Tools.
+
+Two CoreAudio fixes matter if route detection regresses. Apple returns the
+device-name `CFString` with caller ownership here, so the code must use the
+correct retained ownership transfer rather than `takeUnretainedValue()`. Also,
+two live CoreAudio objects can share the MiniToo name: treat them as one route;
+the default output means **Selected**, otherwise any live match means
+**Available**. A missing saved name or genuinely ambiguous match is **Unknown**;
+a saved name with no live CoreAudio match is **Unavailable**.
+
+The Bluetooth MAC remains the stable RFCOMM/link identity. The displayed name
+is only a CoreAudio correlation hint and is refreshed from that saved MAC, so a
+normal Bluetooth rename does not require rescanning.
+
+Two state-machine errors were fixed. Probe-in-flight is independent of the
+visible `Checking…` state, preventing startup from getting stuck; and stop/start
+invalidates old callbacks before publishing the new lifecycle state. The only
+top-level recovery action is contextual: start when stopped, retry when running
+but unhealthy. Stop, restart, and generic-Bluetooth reset remain in Debugging
+Tools because they can interrupt playback.
+
+A real stale-RFCOMM launch showed that an existing daemon process is not proof
+of a usable channel. Launch now preserves a healthy inherited connection. Only
+when its first safe probe fails does it stop that daemon, close the generic
+MiniToo Bluetooth connection once, and start a fresh daemon. A second failure
+is reported without looping; menu-open probes never invoke that reset. Commit
+`cb31991` contains the lifecycle/recovery correction. A fresh launch reaching
+Ready and controlling brightness was directly observed; keep any broader audio
+or automatic-recovery claim bounded to its own user observation.
+
+## DMG Finder presentation record (2026-07-10)
+
+Preserved from the former release notes because Finder behavior is easy to
+rediscover expensively:
+
+- `dmgbuild` creates `.background.tiff`. Users who enable Finder’s “show
+  hidden files” can see it; a shipped DMG must not try to override that user
+  preference.
+- An off-canvas `.background.tiff` icon location expands Finder’s scrollable
+  canvas, creating a scrollbar. Keep any fallback location inside the visible
+  canvas instead.
+- Finder window chrome and a small icon-view inset mean a background-sized
+  `window_rect` can crop the artwork. The current layout includes measured
+  headroom. A user-enabled Path Bar can still consume viewport space; that is
+  an accepted Finder preference, not a DMG-controlled setting.
+- The current committed DMG follow-up is `aed3e86` (icon alignment). Verify
+  its published Finder appearance when a hosted build is available.
 
 ## Dev/testing pace
 Don't rapid-fire kill/rebuild/relaunch/send cycles against the real device
@@ -604,7 +678,7 @@ now-unused packaging around them:
 - Deleted `requirements-build.txt` entirely (not just the `PyInstaller`
   line) -- once the CI workflow's venv-creation/freeze steps were removed,
   nothing referenced this file at all.
-- `.github/workflows/personal-release.yml`: removed the `build` job's
+- The then-active release workflow: removed the `build` job's
   `setup-python`/`.venv` creation/`requirements-build.txt` install/
   `freeze-python-tools.sh` steps. The separate `release` job's own
   `setup-python` + `requirements-release.txt` (for `dmgbuild`, a CI-only
@@ -730,8 +804,8 @@ correction. Lesson: even this project's own internal docs need the same
 matters (here, as unit-test oracle data) -- see
 `feedback_verify_official_claims.md`.
 
-**CI wiring added same day**: a `test` job in
-`.github/workflows/personal-release.yml` checks out the repo and runs
+**CI wiring added same day**: a `test` job in the release workflow checks out
+the repo and runs
 `swift test`; the `build` job now declares `needs: test`, so a failing
 test blocks the release build/publish steps instead of only being
 visible to whoever happens to run `swift test` locally before pushing.
@@ -1017,9 +1091,9 @@ confirmed disabled. The local-only capture is
 ## Future integration: first-class AppleScript support (requested 2026-07-12)
 
 The native app does **not** currently expose an AppleScript dictionary (`.sdef`)
-or a documented `tell application "Divoom MiniToo"` surface. The existing
-README "Integration API" is a developer-facing subprocess/TCP packet API, not
-a stable automation contract and not suitable as the normal user workflow.
+or a documented `tell application` surface. The local daemon's developer
+TCP/packet interface is not a stable automation contract and is not suitable
+as the normal user workflow.
 
 Future work should investigate a deliberately small AppleScript dictionary,
 backed by the same app-side command paths as the menu and Control Center. It
@@ -1072,7 +1146,7 @@ calling it working.
    passwords, and other sensitive on-screen content can be mirrored to the
    device.
 
-## Blind implementation batch: Countdown and Time Sync (2026-07-12)
+## Blind implementation batch: Countdown and Time Sync (2026-07-12; initial state, superseded below)
 
 With no MiniToo connected, only already capture-derived behavior was enabled.
 The native Control Center now exposes Countdown (tool 3) with a duration picker
@@ -1161,5 +1235,6 @@ packet from APK code or memory.
 The Games screen now exposes **Pixel Slot only**, using the previously decoded
 official-app packet `0xA0 [1,1]`. Its UI explicitly tells the user to press the
 MiniToo's physical knob after launch; no other game IDs, in-game controls, or
-software return command were added. This is build-verified but **not yet
-hardware-validated**.
+software return command were added. Launching Pixel Slot from the native UI was
+hardware-confirmed on 2026-07-12. Further games and software exit behavior
+remain capture work.

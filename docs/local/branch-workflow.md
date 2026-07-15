@@ -6,8 +6,8 @@ statement of upstream project policy.
 ## Branches
 - `main` (pushed to `fork/main`) — the active, independently maintained
   branch and release line. Cut all new feature branches here.
-- `personal` (pushed to `fork/personal`) — preserved only for the one-time
-  signed updater bridge; it is no longer a development branch.
+- `shelved/device-rename` — an intentionally inactive capture-derived
+  experiment. Do not use it as a development or release branch.
 - `origin/main` — the upstream comparison point. It intentionally diverges
   from this fork's `main`; do not merge or push to it by routine.
 
@@ -52,10 +52,10 @@ The local `fork` remote is the authority for normal source pushes. Its Git
 credential (currently HTTPS through macOS Keychain) is independent from the
 GitHub CLI's API token and from Codex's GitHub MCP connection. In particular,
 an expired `gh auth status` result is **not** by itself a reason to block a
-normal, explicitly requested `git push fork personal`.
+normal, explicitly requested `git push fork main`.
 
 Before declaring a push blocked, make a read-only transport check such as
-`git ls-remote --heads fork personal`; if it succeeds, stage only the intended
+`git ls-remote --heads fork main`; if it succeeds, stage only the intended
 paths, commit, and push normally. Use the GitHub MCP connector for repository,
 release, and Actions inspection when available. Re-authenticate `gh` only
 when a task genuinely requires that local CLI's API access and MCP cannot do

@@ -1,124 +1,75 @@
 # Distribution strategy (fork-local)
 
-## Goal
+## Current release model
 
-Publish a self-contained universal macOS app from every push to `main`.
+MiniToo Toolbox for macOS is the independently maintained **Main-only**
+product line. A non-documentation push to `main` runs unit tests, builds
+Apple Silicon and Intel slices, assembles a universal app, creates a DMG and a
+separate Sparkle update ZIP, and publishes the rolling `main-latest`
+prerelease plus an immutable update release.
 
-## Product identity
+The former Personal release branch, feeds, tags, releases, compatibility
+workflow inputs, and updater bridge were retired on 2026-07-13. Every
+pre-rename installation—former Main or Personal—must manually install the
+current Main DMG; no legacy build participates in in-app updating.
 
-MiniToo Toolbox for macOS is the independently maintained Main-only product
-line. The prior Personal release path was retired on 2026-07-13; its remaining
-users must install the current Main DMG manually.
+## Current artifacts and build inputs
 
-## Stepwise rollout
+- `main-latest` contains the universal `MiniToo Toolbox.app` DMG, SHA-256
+  checksum, one-item signed `appcast-main.xml`, matching release notes, and
+  the FFmpeg 8.1.2 source archive required by its LGPL distribution.
+- Each update is an immutable app-only ZIP on a `main-update-*` prerelease.
+  The feed contains only the newest item, and CI retains the three newest
+  immutable update releases.
+- The app is native Swift/macOS. It bundles FFmpeg for GIF/video decoding and
+  vendors zstd source; it does not bundle Python, a virtual environment, or
+  PyInstaller output.
+- FFmpeg cache entries are an optional speed optimization. The cache key and
+  manifest bind architecture, source version, and build recipe; final app and
+  release artifacts are never cached.
+- Intel FFmpeg uses NASM installed on the Intel hosted runner. This is a known
+  mutable build dependency and is covered by the deferred supply-chain plan.
 
-1. Build arm64 and x86_64 Swift slices from the pinned Swift Package, link
-   native media support (including vendored zstd), and assemble a universal
-   app. The outer shell packager remains responsible for the app bundle,
-   FFmpeg, signing, and DMG. **Implemented; local compile/package checks
-   passed.**
-2. Replace the external `blueutil` CLI with public IOBluetooth APIs for scan,
-   pairing, disconnect/reconnect, and connection-state checks. **Implemented
-   in code; the scan deliberately distinguishes a real nearby inquiry from
-   saved pairing records and prompts when Bluetooth is off. **Scan/pairing
-   physically confirmed; nearby-unpaired discovery and audio lifecycle still
-   require final physical confirmation.**
-3. Bundle FFmpeg as a separate LGPL-only executable. The release workflow
-   builds it with GPL/nonfree features disabled and attaches the exact source
-   archive with each release. **Implemented and published by the first
-   successful CI release.**
-4. Publish the rolling `main-latest` prerelease only after the local
-   hardware checklist below passes. The first push is also the first real CI
-   validation of both hosted macOS architectures, native media support,
-   FFmpeg builds, release permissions, and universal assembly.
+## Established evidence
 
-### First CI failure and correction
+The release pipeline has already passed end-to-end universal assembly and
+publication. The last locally recorded successful Main-only publication is
+GitHub Actions run `29262212226` (Main build 3015). Earlier failed CI runs,
+Python-helper packaging issues, ZIP-to-DMG migration work, and pre-rename
+asset cleanup are resolved history, not release gates.
 
-Run `29100401008` failed before release assembly for two unrelated reasons:
-the Apple Silicon package script treated the expected absence of a signing
-identity as fatal under `pipefail`, and the Intel FFmpeg configure expected
-NASM, which the hosted runner lacks. The signing lookup now permits the
-existing ad-hoc fallback; Intel CI installs NASM before building FFmpeg, which
-retains its normal optimized x86 path. Native app build logs are retained for
-seven days on future failed runs.
+Commit `aed3e86` subsequently adjusted DMG icon alignment. This repository's
+local notes do not record a hosted run for that exact commit, so verify the
+published presentation when that build is available rather than restating the
+old first-release checklist.
 
-The corrected second run (`29112757315`) successfully built both architecture
-slices, including Intel FFmpeg with NASM. It then failed only in universal
-assembly because the workflow attempted to rename the extracted Intel app to
-the exact same path. That no-op is removed; the next push validates assembly,
-ad-hoc signing, artifact upload, and release publication. The third run
-(`29113738061`) completed successfully on 2026-07-10 and published the
-universal release, SHA-256 file, and matching FFmpeg source archive to the
-then-active rolling prerelease.
+## Remaining release validation
 
-Subsequent successful runs changed the user-facing artifact from ZIP to a
-universal DMG and removed stale ZIP assets. The DMG contains only the app,
-`INSTALLING.md`, and Finder presentation metadata; the LGPL FFmpeg source
-archive remains a separate release attachment. Run `29118886535` published the
-selected pixel-art background and deterministic app/guide icon positions. The
-published DMG metadata was checked directly; a fresh Finder visual check by a
-user remains the final presentation confirmation.
+These are deliberate physical observations, not blockers inferred from clean
+logs:
 
-### Later CI optimization: deterministic dependency caches
+- In a fresh install, scan for and select/pair a MiniToo; then relaunch and
+  confirm the saved address is used.
+- Exercise nearby-unpaired discovery and the full native Bluetooth lifecycle:
+  disconnect → RFCOMM-open/control → audio reconnect. The generic link API
+  must not be described as an audio-profile control.
+- Send a 128×128 still, GIF, short MP4/video, Photo Album still, and
+  full-screen 160×128 media from the actual menu UI. These paths are already
+  hardware-confirmed; this is normal release regression coverage.
+- Inspect a published DMG containing the latest `aed3e86` icon-alignment
+  change in Finder. User Finder settings can expose hidden background files or
+  consume viewport space; the DMG must not attempt to override those settings.
 
-The hosted workflow now caches the per-architecture compiled FFmpeg binary and
-its source archive, plus pip downloads. The FFmpeg key includes architecture,
-source version, an explicit cache revision, and the hash of
-`tools/build-ffmpeg.sh`; its manifest additionally validates the source
-version, architecture, recipe hash, and executable before a cache hit is used.
-Do **not** cache `.venv`, the FFmpeg build tree, Homebrew, or final
-app/release artifacts: those are runner/path-sensitive, too large for the
-value, or are already handled as artifacts. Increment `ffmpeg-cache-v1` in
-the workflow to deliberately invalidate all FFmpeg caches. Caching is an
-optional speed-up, never a dependency for a reproducible build.
+## CI monitoring rule
 
-The cache was warmed by `29115469899` and then verified by `29116481715` and
-later runs, which restored the two FFmpeg binaries rather than recompiling
-them.
+The agent that triggers a Main-release workflow owns its outcome: poll that
+specific run to success or failure and fetch/diagnose the failing job log in
+the same task. Do not hand off a triggered workflow without a terminal result.
+If the current surface cannot maintain that monitor, say so before handoff.
 
-### Self-update rollout (in progress)
+## Deferred hardening
 
-The app is moving to Sparkle 2 through the checked-in Swift Package, while
-`tools/build-divoom-app.sh` continues to own app packaging. CI embeds the
-source repository, branch, channel, feed URL, commit, and build number in the
-app. The updater uses only the signed Main feed; retired pre-rename builds are
-not part of the in-app update population.
-
-Each release publishes a user-facing DMG plus a separate immutable, app-only
-update ZIP. `main-latest` carries a one-item, signed `appcast-main.xml` that
-points at the newest immutable ZIP. The workflow retains only the newest three
-`main-update-*` releases. During
-the current ad-hoc-signing period, the app offers—not silently performs—an
-explicit default-checked option to remove the verified update bundle's
-quarantine before restart. Developer ID signing and notarization replace this
-temporary bridge later. See `docs/local/update-strategy.md` for the full plan
-and validation checklist. No device protocol behavior changes in this work.
-
-### CI monitoring rule
-
-The agent that triggers a Main-release workflow owns its outcome: it polls
-that run using concise status checks until success or failure, then immediately
-retrieves and diagnoses any failing job log. It must not simply start a build
-and rely on the user to return with the result. This is also a standing
-workspace instruction in `../AGENTS.md` so it applies in later sessions and to
-all agents working in this project. If an agent cannot remain active or create
-a persistent monitor in its current surface, it must state that limitation
-before handing off.
-
-## Required physical checklist
-
-- New install: first-run scan finds the MiniToo.
-- New install: select/pair a device and relaunch; cached address is used.
-- Audio is connected: start/restart daemon disconnects audio and opens RFCOMM.
-- Reconnect Audio works afterward.
-- Send a still image, GIF, and short MP4/video from the menu UI.
-- Confirm the app works without Homebrew `blueutil`, Python, or FFmpeg.
-- Re-test normal 128×128 still and MP4 send after the packet-reuse change.
-- Send Media full-screen (160×128) mode: re-enabled and hardware-confirmed
-  2026-07-10 for still image and MP4/video after a preview-build packet-file
-  race was fixed (see `docs/local/dev-notes.md`). Include it in normal
-  Send Media testing going forward. Photo Album's separate 160×128 JPEG
-  path has also been physically confirmed working.
-
-Never call Bluetooth hardware behavior verified from logs alone. Record the
-user's visual/physical result in `docs/local/status.md` before release.
+Branch protection, least-privilege release separation, immutable Action pins,
+FFmpeg digest verification, locked Python release dependencies, and Developer
+ID signing/notarization are not silently assumed here. Their priorities and
+acceptance checks are maintained in `security-supply-chain-plan.md`.

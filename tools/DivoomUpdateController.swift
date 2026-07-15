@@ -5,8 +5,7 @@ import Sparkle
 /// Owns Sparkle configuration for the channel embedded in this particular app
 /// build. There is intentionally no generic GitHub "latest" lookup here:
 /// the build's feed URL and Sparkle channel are the update trust boundary.
-/// The sole exception is an explicitly embedded, signed Personal-to-main
-/// migration bridge; new main builds cannot use that exception.
+/// The retired Personal-to-main migration bridge is no longer an exception.
 final class DivoomUpdateController: NSObject, SPUUpdaterDelegate {
     static let automaticChecksKey = "AutomaticallyCheckForUpdates"
     static let consentPresentedKey = "UpdateConsentPresented"

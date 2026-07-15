@@ -60,9 +60,8 @@ jobs:
           VERSION_PREFIX="0.2.0-alpha"
           # Sparkle compares CFBundleVersion, not CFBundleShortVersionString.
           # Legacy public builds reached at least build 39 before the renamed
-          # repository began a new Actions run-number sequence. Keep all
-          # post-rename builds above that sequence so legacy Main clients can
-          # discover the identity-migration release.
+          # repository began a new Actions run-number sequence. Keep the new
+          # Main-only release sequence safely above that historic range.
           RELEASE_BUILD_NUMBER=$((3000 + GITHUB_RUN_NUMBER))
           DIVOOM_ARCHS=${{ matrix.arch }} \
           DIVOOM_APP_VERSION="${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}" \

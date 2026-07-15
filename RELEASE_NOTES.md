@@ -1,4 +1,4 @@
-# Divoom MiniToo alpha
+# MiniToo Toolbox for macOS — alpha
 
 This is an early independently maintained alpha build for macOS 12 and later.
 It is a substantial downstream expansion of the original upstream menu-bar app.

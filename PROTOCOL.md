@@ -26,7 +26,9 @@ Do not probe this family further without a hardware power button within reach.
 ## Device / transport
 
 - Device: `Divoom MiniToo-Audio`
-- Bluetooth address: no longer hardcoded — discovered via an in-app scan and cached (see README's "First-time setup"); `B1:21:81:B1:F0:84` below is just an example value for illustrative commands.
+- Bluetooth address: no longer hardcoded — discovered via an in-app scan and
+  cached (see README's "First-time setup"). Documentation uses
+  `<MINITOO_MAC>` only as a command placeholder.
 - Transport: Bluetooth Classic SPP over RFCOMM
 - Working app protocol channel from macOS: RFCOMM channel `1`, opened directly via `IOBluetooth`.
 - The macOS serial device `/dev/cu.DivoomMiniToo-Audio` exists, but was unreliable for this protocol. Direct RFCOMM worked.
@@ -50,21 +52,24 @@ Direct `IOBluetooth` findings:
 
 If the Divoom is connected as an audio device in macOS, opening the app RFCOMM path can fail or interact with the wrong profile.
 
-Validated reliable flow:
+Historical low-level debugging flow (not the packaged app's normal path):
 
 ```bash
-blueutil --disconnect B1:21:81:B1:F0:84 || true
-tools/divoom-rfcomm-send B1:21:81:B1:F0:84 1 <packets-lenpref.bin> 0.012
+tools/divoom-rfcomm-send <MINITOO_MAC> 1 <packets-lenpref.bin> 0.012
 ```
 
-This avoids the noisy/visible audio profile and opens the RFCOMM app channel directly. The disconnect causes an audible reconnect/noise if audio was active, so the next goal is a daemon that opens RFCOMM once and keeps it open for multiple sends.
+The packaged app discovers and caches its selected MAC in `UserDefaults`; no
+address is hardcoded. It starts/reuses its daemon without deliberately
+disconnecting audio, and performs one native generic-Bluetooth reset only when
+the initial safe control probe proves the inherited RFCOMM channel unusable.
 
-Preferred future UX:
+Current app behavior:
 
-- Start daemon once.
-- Daemon opens RFCOMM channel `1` directly.
-- Keep the channel open.
-- Send multiple image jobs through the daemon without repeated disconnect/reconnect.
+- The daemon opens RFCOMM channel `1` directly and keeps it open for multiple
+  jobs.
+- The Debugging Tools recovery action is confirmation-gated because it can
+  interrupt this Mac's Bluetooth/audio connection; it is not described as an
+  audio-profile operation.
 
 ## Generic frame format
 
@@ -410,8 +415,7 @@ Working direct send example:
 
 ```bash
 .venv/bin/python tools/send_divoom_image.py fixer.png --dry-run
-blueutil --disconnect B1:21:81:B1:F0:84 || true
-tools/divoom-rfcomm-send B1:21:81:B1:F0:84 1 captures/mac-send/fixer-packets-lenpref.bin 0.012
+tools/divoom-rfcomm-send <MINITOO_MAC> 1 captures/mac-send/fixer-packets-lenpref.bin 0.012
 ```
 
 Known-good result:
@@ -453,10 +457,9 @@ Daemon behavior:
 Current usage:
 
 ```bash
-# One-time start. If this fails with ret=0x-1ffffd44, disconnect the audio
-# profile once, then start the daemon again.
-blueutil --disconnect B1:21:81:B1:F0:84 || true
-tools/divoom-daemon B1:21:81:B1:F0:84 1 40583
+# Low-level development-only daemon start. Obtain <MINITOO_MAC> through the
+# app's scan flow; do not put an address in source or scripts.
+tools/divoom-daemon <MINITOO_MAC> 1 40583
 ```
 
 In another shell:
@@ -496,7 +499,12 @@ Important operational note:
 - In testing, daemon jobs sometimes reported `sent but final ACK not observed` while the device still updated correctly. Treat this as a daemon callback/ACK-observation issue, not necessarily a send failure.
 - `IOBluetoothRFCOMMChannel` writes must happen on the same thread that opened the channel — a background-thread `writeSync` call reports success while sending nothing on the wire. This is what the daemon's write-timeout handling guards against.
 
-## Menu-bar controller
+## Menu-bar controller (historical UI notes)
+
+The detailed menu-action inventory below describes earlier iterations and is
+kept only as engineering history. Do not use it as the current UI contract;
+`docs/local/status.md`, the current Swift sources, and the user-facing README
+are authoritative for present behavior.
 
 Packaged app build:
 
@@ -507,26 +515,30 @@ tools/build-divoom-app.sh
 This creates:
 
 ```text
-build/Divoom MiniToo.app
+build/MiniToo Toolbox.app
 ```
 
 Install/copy like a normal macOS app:
 
 ```bash
-cp -R "build/Divoom MiniToo.app" /Applications/
-open "/Applications/Divoom MiniToo.app"
+cp -R "build/MiniToo Toolbox.app" "$HOME/Applications/"
+open "$HOME/Applications/MiniToo Toolbox.app"
 ```
 
 Packaged app behavior:
 
 - Runs as a menu-bar app (`LSUIElement`, no Dock icon).
-- On launch/open, it automatically disconnects the Divoom macOS audio profile once, waits briefly, then starts the Swift RFCOMM daemon.
+- On launch/open, it starts or reuses the Swift RFCOMM daemon without
+  deliberately disconnecting Bluetooth/audio.
 - The daemon binary is bundled inside the app at `Contents/Resources/tools/divoom-daemon` and keeps RFCOMM channel `1` open.
-- Logs and generated send artifacts go to `~/Library/Application Support/DivoomMiniToo/` so the app can be copied to `/Applications` without writing into its bundle.
-- `blueutil` is still required for audio disconnect/reconnect convenience actions (`brew install blueutil`).
-- Image/GIF/video sending from the app shells out to the bundled Python venv when packaged.
+- Logs and generated send artifacts go to
+  `~/Library/Application Support/MiniTooToolbox/`.
+- The packaged app uses public `IOBluetooth`; `blueutil` is not a runtime
+  dependency.
+- Image/GIF/video sending uses the native Swift pipeline plus bundled FFmpeg;
+  no Python runtime is packaged.
 
-Raw binary build/run from repo:
+Historical direct build/run from the pre-SwiftPM layout:
 
 ```bash
 swiftc tools/DivoomMenuBar.swift -framework AppKit -o tools/divoom-menubar
@@ -624,7 +636,7 @@ Menu actions:
   - Starts `tools/divoom-daemon` without disconnecting audio first.
   - Disabled while daemon is already running.
 - `Disconnect Audio + Start Daemon`
-  - Runs `blueutil --disconnect B1:21:81:B1:F0:84`, then starts daemon.
+  - Ran `blueutil --disconnect <MINITOO_MAC>`, then started the daemon.
   - Use this if normal start fails because macOS audio owns the RFCOMM channel.
   - Disabled while daemon is already running.
 - `Stop Daemon`
@@ -642,7 +654,7 @@ Menu actions:
   `Open Menu Log`, `Open Daemon Log` (grouped here once the menu started
   accumulating flat "Open ..." items that aren't day-to-day controls).
 
-Current UX notes:
+Historical UX notes (superseded by the current status tracker):
 
 - The menu refreshes when opened, so daemon/audio status should reflect current state.
 - The app avoids modal success/error popups; status appears as the `Last:` line in the menu.
@@ -761,9 +773,9 @@ decompile-derived findings (2026-07-05). Sources:
   extensive empirical hardware probing against a MiniToo, same firmware
   2.4.0. By far the richest source; see its `FINDINGS.md`.
 - [ztomer/divoom_lib](https://github.com/ztomer/divoom_lib) — includes a
-  scrape of Divoom's *official* developer docs
-  (`docs/divoom_docs/`, from `docin.divoom-gz.com`), the canonical
-  reference for opcode byte layouts across Divoom's whole product line.
+  third-party archive described as a scrape of Divoom developer material.
+  It is useful only as an unverified cross-check; this project has not
+  independently authenticated it as an official or canonical MiniToo source.
 - [d03n3rfr1tz3/hass-divoom](https://github.com/d03n3rfr1tz3/hass-divoom) —
   Home Assistant integration with a generic Divoom opcode map (not
   MiniToo-specific, but useful cross-confirmation).
@@ -772,24 +784,17 @@ decompile-derived findings (2026-07-05). Sources:
   0x8b image path; no new findings, but confirms our envelope/checksum
   understanding is being relied on elsewhere.
 
-### Confirmed matches (independent confirmation of what we already had)
+### Cross-checks (not an authority for new MiniToo writes)
 
 - Frame envelope (`01 len cmd body checksum 02`), checksum algorithm.
-- `0x74` = Set brightness, single byte 0-100 — matches the *official*
-  Divoom docs verbatim. This directly resolves a conflict where
-  bugzmanov's notes claimed `0x74` "not visible on MiniToo, `0x32` is the
-  one" — our own hardware test (dimmed at 10, full at 100) combined with
-  the official doc confirmation outweighs that untested claim. No action
-  needed; keep using `0x74`.
-- `0x43`/`0x42` = Set/Get alarm time, byte layout (`alarm_index, on_off,
-  hour, minute, week_bitmask, mode, trigger_mode, fm[2], volume`) —
-  matches the *official* Divoom docs (`alarm_memorial.md`) field-for-field
-  with what we independently derived from decompiling `CmdManager.x0()`.
-  This substantially raises confidence for the alarm feature: bugzmanov's
-  probe logged `0x42` as "silent" on their unit, but a passive GET probe
-  going unanswered doesn't necessarily mean `0x43` SET has no effect —
-  worth a direct, deliberate hardware test (set a near-future alarm, listen
-  for it to fire) rather than treating it as settled either way.
+- `0x74` = Set brightness, single byte 0-100. The project's own direct
+  hardware test (dimmed at 10, full at 100) is the basis for using it; an
+  incompatible third-party note about `0x32` is not.
+- `0x43`/`0x42` alarm layouts found in third-party material and APK tracing
+  are **not** an implementation basis. The project's capture established the
+  `0x42 [0x45]` list read and directly observed a configured alarm firing, but
+  has not isolated a writable slot packet. Keep Alarms disabled until an
+  Android HCI capture supplies that packet and the native UI is hardware-tested.
 - `0xa0` = Set game, `0x72` = Set tool view — matches our own findings.
 
 ### New capabilities found
@@ -813,21 +818,20 @@ decompile-derived findings (2026-07-05). Sources:
   There is no software "return to clock face" command for either tool;
   the physical button exits it.
 
-### Not yet implemented here
+### Not implemented or intentionally unavailable
 
 - **ANCS-style text notification** — opcode `0x50`
   (`SPP_SET_ANDROID_ANCS`), body = `[icon_slot_u8, text_len_u8,
   utf8_text...]`. Flashes an icon (24 preset app icons: Instagram,
   WhatsApp, Discord, Telegram, etc.) + up to 128 bytes of text for ~1-3s,
-  then reverts to the previous view. No pixel upload needed. Confirmed
-  reliable on hardware. Good candidate for a quick "flash a status
-  message" feature — a natural fit as a composer screen in Control Center.
-- **Countdown tool view** (tool `3`) — native Control Center implementation
-  pending direct hardware validation. Captured `0x72` body is
-  `[3, active, minutes, seconds]`: `[3,1,1,0]` starts one minute and
-  `[3,0,1,0]` ends/resets it. The MiniToo's physical pause/resume behavior is
-  not protocol-isolated, so the macOS UI intentionally does not guess at a
-  pause command.
+  then reverts to the previous view. This is third-party/APK research only,
+  not a project capture or hardware result; do not build it without the
+  normal capture-first process.
+- **Countdown pause/resume** — Countdown Start and Stop/Reset are native,
+  capture-derived, and hardware-confirmed. Captured `0x72` bodies are
+  `[3,1,minutes,seconds]` to start and `[3,0,minutes,seconds]` to stop/reset.
+  The MiniToo's physical pause/resume behavior is not protocol-isolated, so
+  the macOS UI intentionally does not guess at a pause command.
 - **Scoreboard tool view** — its user-facing behavior was observed, but the
   project does not retain a recoverable captured write body. It stays disabled
   until a fresh HCI capture establishes the packet; do not infer it from an
