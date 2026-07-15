@@ -95,14 +95,13 @@ GIF/video decoding under LGPL terms.
 
 ```bash
 bash tools/build-divoom-app.sh
-mkdir -p "$HOME/Applications"
-cp -R "build/MiniToo Toolbox.app" "$HOME/Applications/"
-open "$HOME/Applications/MiniToo Toolbox.app"
+cp -R "build/MiniToo Toolbox.app" /Applications/
+open "/Applications/MiniToo Toolbox.app"
 ```
 
-You can use `/Applications/` instead if you want a system-wide installation.
-If `~/Applications` does not work on your Mac, try `/Applications` before
-filing a bug report.
+`~/Applications` should also work if you prefer a per-user installation, but
+it has had less release testing. If it does not work, try `/Applications`
+before filing a bug report.
 
 To make a universal local build on a matching Mac:
 

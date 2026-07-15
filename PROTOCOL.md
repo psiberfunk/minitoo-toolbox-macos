@@ -521,9 +521,12 @@ build/MiniToo Toolbox.app
 Install/copy like a normal macOS app:
 
 ```bash
-cp -R "build/MiniToo Toolbox.app" "$HOME/Applications/"
-open "$HOME/Applications/MiniToo Toolbox.app"
+cp -R "build/MiniToo Toolbox.app" /Applications/
+open "/Applications/MiniToo Toolbox.app"
 ```
+
+`~/Applications` should also work for a per-user installation, but it has had
+less release testing. Try `/Applications` if it does not work.
 
 Packaged app behavior:
 

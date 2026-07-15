@@ -167,6 +167,9 @@ Built: $APP
 Install:
   cp -R "$APP" /Applications/
 
+  (~/Applications should also work for a per-user installation, but has had
+   less release testing. Try /Applications if it does not work.)
+
 Open:
   open "$APP"
 

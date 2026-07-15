@@ -29,6 +29,11 @@ Every pre-rename build—former Main or Personal—must manually install a curre
 Main DMG. The compatibility updater experiment is retired; no legacy build is
 an in-app update client. See `minitoo-toolbox-migration.md`.
 
+For a manual install, `/Applications` is the recommended, release-tested
+location. `~/Applications` should also work for a per-user installation, but
+has had less release testing; try `/Applications` before filing a bug about
+that location.
+
 ## Established evidence
 
 On 2026-07-11, hosted run `29154079898` passed the original end-to-end
